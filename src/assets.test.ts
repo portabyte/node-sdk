@@ -30,7 +30,30 @@ const session = {
 };
 
 describe('upload', () => {
-  it('when uploading bytes, then create, PUT, and confirm run in order', async () => {
+	it('when visibility is omitted, then the server applies its default', async () => {
+		const publicSession = { ...session, visibility: 'public' as const };
+		const { fetchImpl, requests } = makeFetch([
+			{
+				match: (r) => r.method === 'POST' && r.url.endsWith('/assets'),
+				status: 201,
+				body: publicSession,
+			},
+		]);
+
+		await client(fetchImpl).assets.create({
+			name: 'logo.png',
+			contentType: 'image/png',
+			sizeBytes: 3,
+		});
+
+		expect(JSON.parse(String(requests[0]?.body))).toEqual({
+			name: 'logo.png',
+			contentType: 'image/png',
+			sizeBytes: 3,
+		});
+	});
+
+	it('when uploading bytes, then create, PUT, and confirm run in order', async () => {
     const { fetchImpl, requests } = makeFetch([
       {
         match: (r) => r.method === 'POST' && r.url.endsWith('/assets'),

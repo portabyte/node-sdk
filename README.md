@@ -45,7 +45,7 @@ Upload options:
 | Option        | Description                                                                     | Default     |
 | ------------- | ------------------------------------------------------------------------------- | ----------- |
 | `path`        | Customer-owned address; uploading to an existing live path replaces that file   | —           |
-| `visibility`  | `'private'` or `'public'`                                                        | `'private'` |
+| `visibility`  | `'private'` or `'public'`                                                        | `'public'`  |
 | `corsOrigin`  | Browser origin allowed to perform the upload, or `'*'`                          | —           |
 
 > **Note:** a `Blob` without a content type is rejected — pass bytes with an explicit `contentType` instead.
