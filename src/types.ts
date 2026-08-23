@@ -28,6 +28,35 @@ export interface CreateSessionOptions {
 export type CreateSession = Asset & {
   uploadUrl: string;
   uploadExpiresAt: string;
+  uploadMode: 'single' | 'multipart';
+  /** Present only when uploadMode is multipart. */
+  partSize?: number;
+  /** Recommended maximum simultaneous part uploads. */
+  maxConcurrency?: number;
+};
+
+export interface MultipartPart {
+  partNumber: number;
+  etag: string;
+}
+
+/** Persist this alongside the create session to resume a multipart upload. */
+export interface MultipartUploadState {
+  uploadId?: string;
+  parts: MultipartPart[];
+}
+
+export interface MultipartUploadOptions {
+  /** State from an earlier interrupted multipart upload. */
+  state?: MultipartUploadState;
+  /** Called after a part completes; persist the state here to enable resume. */
+  onStateChange?: (state: MultipartUploadState) => void | Promise<void>;
+  /** Defaults to Portabyte's recommendation, capped at 3. */
+  concurrency?: number;
+}
+
+export type UploadOptions = CreateSessionOptions & {
+  multipart?: MultipartUploadOptions;
 };
 
 export interface ListAssetsResult {

@@ -8,7 +8,7 @@ const neverFetch: typeof fetch = () =>
 
 function client(fetchImpl: typeof fetch, overrides = {}) {
   return new Portabyte({
-    apiKey: 'pbt_live_test',
+    apiKey: 'pbt_sk_live_test',
     baseUrl: 'https://api.test',
     fetch: fetchImpl,
     ...overrides,
@@ -20,14 +20,14 @@ describe('Portabyte', () => {
     vi.unstubAllGlobals();
   });
 
-  it('when the api key lacks the pbt_live_ prefix, then construction throws', () => {
+  it('when the api key lacks the pbt_sk_live_ prefix, then construction throws', () => {
     expect(
       () =>
         new Portabyte({
           apiKey: 'sk_wrong',
           fetch: neverFetch,
         }),
-    ).toThrow(/pbt_live_/);
+    ).toThrow(/pbt_sk_live_/);
   });
 
   it('when no fetch is injected, then the global fetch is used', async () => {
@@ -38,7 +38,7 @@ describe('Portabyte', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const portabyte = new Portabyte({
-      apiKey: 'pbt_live_test',
+      apiKey: 'pbt_sk_live_test',
       baseUrl: 'https://api.test',
     });
     await portabyte.assets.list();
@@ -69,7 +69,7 @@ describe('Portabyte', () => {
       },
     ]);
     await new Portabyte({
-      apiKey: 'pbt_live_test',
+      apiKey: 'pbt_sk_live_test',
       baseUrl: 'https://api.test/',
       fetch: fetchImpl,
     }).assets.list();

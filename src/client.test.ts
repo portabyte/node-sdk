@@ -12,7 +12,7 @@ function http(
 ) {
   return new HttpClient({
     baseUrl: 'https://api.test',
-    apiKey: 'pbt_live_test',
+    apiKey: 'pbt_sk_live_test',
     maxRetries: MAX_RETRIES,
     timeoutMs: 30_000,
     sdkHeaderValue: 'typescript/0.1.0',

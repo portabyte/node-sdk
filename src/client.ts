@@ -73,6 +73,46 @@ export class HttpClient {
     });
   }
 
+  async putBytesJSON<T>(
+    uploadUrl: string,
+    contentType: string,
+    data: Blob | Uint8Array,
+  ): Promise<T> {
+    return this.run(true, async () => {
+      const response = await this.send(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': contentType },
+        body: data as BodyInit,
+      });
+      if (!response.ok) {
+        throw await responseError(response, true);
+      }
+      return (await response.json()) as T;
+    });
+  }
+
+  async uploadJSON<T>(
+    uploadUrl: string,
+    method: 'POST' | 'PUT' | 'DELETE',
+    body: unknown,
+    idempotent: boolean,
+  ): Promise<T> {
+    return this.run(idempotent, async () => {
+      const response = await this.send(uploadUrl, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        throw await responseError(response, idempotent);
+      }
+      if (response.status === 204) {
+        return undefined as T;
+      }
+      return (await response.json()) as T;
+    });
+  }
+
   private async send(url: string, init: RequestInit): Promise<Response> {
     try {
       return await this.options.fetchImpl(url, {

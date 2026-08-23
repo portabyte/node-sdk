@@ -6,7 +6,11 @@ import type {
   CreateSession,
   CreateSessionOptions,
   ListAssetsResult,
+  MultipartPart,
+  MultipartUploadOptions,
+  MultipartUploadState,
   UploadInput,
+  UploadOptions,
 } from './types';
 
 export interface ListOptions {
@@ -47,14 +51,16 @@ export class AssetsAPI {
    */
   async upload(
     input: UploadInput,
-    options: CreateSessionOptions = {},
+    options: UploadOptions = {},
   ): Promise<Asset> {
     const described = describeInput(input);
-    const session = await this.create({ ...described, ...options });
-    await this.http.putBytes(
-      session.uploadUrl,
-      described.contentType,
+    const { multipart, ...createOptions } = options;
+    const session = await this.create({ ...described, ...createOptions });
+    await this.transfer(
+      session,
       toBody(input),
+      described.contentType,
+      multipart,
     );
     try {
       return await this.http.request<Asset>({
@@ -67,6 +73,33 @@ export class AssetsAPI {
       }
       throw error;
     }
+  }
+
+  /**
+   * Continues a previously-created session. Persist the create session and
+   * MultipartUploadState after each part to resume after an interruption.
+   */
+  async resume(
+    session: CreateSession,
+    input: UploadInput,
+    options: MultipartUploadOptions = {},
+  ): Promise<Asset> {
+    const described = describeInput(input);
+    if (
+      described.sizeBytes !== session.sizeBytes ||
+      described.contentType !== session.contentType
+    ) {
+      throw new PortabyteError(
+        'The selected file does not match this upload session.',
+        0,
+        'invalid_argument',
+      );
+    }
+    await this.transfer(session, toBody(input), described.contentType, options);
+    return this.http.request<Asset>({
+      method: 'POST',
+      path: this.path(`assets/${session.id}/uploaded`),
+    });
   }
 
   async list(options: ListOptions = {}): Promise<ListAssetsResult> {
@@ -109,6 +142,28 @@ export class AssetsAPI {
   }
 
   /**
+   * Cancels a multipart transfer and removes its pending asset. The gateway
+   * abort is best-effort: removing the pending asset guarantees the object
+   * can never be confirmed or delivered, even if its signed URL has expired.
+   */
+  async cancel(
+    session: CreateSession,
+    state?: MultipartUploadState,
+  ): Promise<void> {
+    if (session.uploadMode === 'multipart' && state?.uploadId) {
+      await this.http
+        .uploadJSON(
+          `${session.uploadUrl}/multipart/${state.uploadId}`,
+          'DELETE',
+          undefined,
+          false,
+        )
+        .catch(() => undefined);
+    }
+    await this.remove(session.id);
+  }
+
+  /**
    * Returns the URL the asset is served from: stable and cacheable for
    * public assets, short-lived signed otherwise.
    */
@@ -121,6 +176,86 @@ export class AssetsAPI {
 
   private path(suffix: string): string {
     return `/v1/${suffix}`;
+  }
+
+  private async transfer(
+    session: CreateSession,
+    body: Blob | Uint8Array,
+    contentType: string,
+    options?: MultipartUploadOptions,
+  ): Promise<void> {
+    if (session.uploadMode === 'single') {
+      await this.http.putBytes(session.uploadUrl, contentType, body);
+      return;
+    }
+    await this.uploadMultipart(session, body, contentType, options);
+  }
+
+  private async uploadMultipart(
+    session: CreateSession,
+    body: Blob | Uint8Array,
+    contentType: string,
+    options: MultipartUploadOptions = {},
+  ): Promise<void> {
+    if (!session.partSize || session.partSize < 5 * 1024 * 1024) {
+      throw new PortabyteError(
+        'Multipart upload session is missing a valid part size.',
+        0,
+        'invalid_upload',
+      );
+    }
+    const state: MultipartUploadState = {
+      uploadId: options.state?.uploadId,
+      parts: [...(options.state?.parts ?? [])],
+    };
+    if (!state.uploadId) {
+      const started = await this.http.uploadJSON<{ uploadId: string }>(
+        `${session.uploadUrl}/multipart`,
+        'POST',
+        {},
+        false,
+      );
+      state.uploadId = started.uploadId;
+      await options.onStateChange?.({ ...state, parts: [...state.parts] });
+    }
+    const partCount = Math.ceil(session.sizeBytes / session.partSize);
+    const completed = new Map(
+      state.parts.map((part) => [part.partNumber, part]),
+    );
+    const concurrency = Math.max(
+      1,
+      Math.min(options.concurrency ?? session.maxConcurrency ?? 3, 3),
+    );
+    let nextPart = 1;
+    const uploadNext = async () => {
+      for (;;) {
+        const partNumber = nextPart;
+        nextPart += 1;
+        if (partNumber > partCount) return;
+        if (completed.has(partNumber)) continue;
+        const start = (partNumber - 1) * session.partSize!;
+        const end = Math.min(start + session.partSize!, session.sizeBytes);
+        const part = await this.http.putBytesJSON<MultipartPart>(
+          `${session.uploadUrl}/multipart/${state.uploadId}/parts/${partNumber}`,
+          contentType,
+          sliceBody(body, start, end),
+        );
+        completed.set(part.partNumber, part);
+        state.parts = [...completed.values()].sort(
+          (left, right) => left.partNumber - right.partNumber,
+        );
+        await options.onStateChange?.({ ...state, parts: [...state.parts] });
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, partCount) }, uploadNext),
+    );
+    await this.http.uploadJSON(
+      `${session.uploadUrl}/multipart/${state.uploadId}/complete`,
+      'POST',
+      { parts: state.parts },
+      true,
+    );
   }
 }
 
@@ -153,4 +288,12 @@ function describeInput(input: UploadInput): {
 
 function toBody(input: UploadInput): Blob | Uint8Array {
   return input instanceof Blob ? input : input.data;
+}
+
+function sliceBody(
+  body: Blob | Uint8Array,
+  start: number,
+  end: number,
+): Blob | Uint8Array {
+  return body instanceof Blob ? body.slice(start, end) : body.slice(start, end);
 }

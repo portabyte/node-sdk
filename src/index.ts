@@ -7,7 +7,11 @@ import type {
   CreateSession,
   CreateSessionOptions,
   ListAssetsResult,
+  MultipartPart,
+  MultipartUploadOptions,
+  MultipartUploadState,
   UploadInput,
+  UploadOptions,
 } from './types';
 
 export const VERSION = '0.1.0';
@@ -31,9 +35,9 @@ export class Portabyte {
   readonly assets: AssetsAPI;
 
   constructor(options: PortabyteOptions) {
-    if (!options.apiKey.startsWith('pbt_live_')) {
+    if (!options.apiKey.startsWith('pbt_sk_live_')) {
       throw new PortabyteError(
-        'apiKey must be a project API key starting with "pbt_live_".',
+        'apiKey must be a server API key starting with "pbt_sk_live_".',
         0,
         'invalid_argument',
       );
@@ -57,5 +61,9 @@ export type {
   CreateSession,
   CreateSessionOptions,
   ListAssetsResult,
+  MultipartPart,
+  MultipartUploadOptions,
+  MultipartUploadState,
   UploadInput,
+  UploadOptions,
 };
