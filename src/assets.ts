@@ -15,10 +15,7 @@ export interface ListOptions {
 }
 
 export class AssetsAPI {
-  constructor(
-    private readonly http: HttpClient,
-    private readonly projectId: string,
-  ) {}
+  constructor(private readonly http: HttpClient) {}
 
   /** Creates a signed upload session. Prefer {@link upload}, which runs every step. */
   async create(
@@ -123,7 +120,7 @@ export class AssetsAPI {
   }
 
   private path(suffix: string): string {
-    return `/v1/projects/${this.projectId}/${suffix}`;
+    return `/v1/${suffix}`;
   }
 }
 

@@ -1,12 +1,12 @@
 # Portabyte TypeScript SDK
 
-The Portabyte TypeScript SDK provides convenient access to the Portabyte API from applications written in server or browser JavaScript. It covers the full file lifecycle: signed upload sessions that stream straight to the edge, delivery URLs for public and private files, and asset management.
+The Portabyte TypeScript SDK provides convenient server-side access to the Portabyte API. It covers the full file lifecycle: signed upload sessions that stream straight to the edge, delivery URLs for public and private files, and asset management.
 
-It is written in TypeScript, ships with zero dependencies on the native `fetch` API, and runs in browsers, Node 18+, Bun, Deno, and edge runtimes.
+It is written in TypeScript, ships with zero dependencies on the native `fetch` API, and runs in trusted Node 18+, Bun, Deno, and edge server runtimes.
 
 ## Requirements
 
-Node.js >= 18 or a browser with `fetch` support.
+Node.js >= 18 or another trusted server runtime with `fetch` support.
 
 ## Installation
 
@@ -21,7 +21,6 @@ import { Portabyte } from '@portabyte/sdk';
 
 const portabyte = new Portabyte({
   apiKey: process.env.PORTABYTE_API_KEY, // pbt_live_...
-  projectId: process.env.PORTABYTE_PROJECT_ID,
 });
 ```
 
@@ -36,8 +35,6 @@ const asset = await portabyte.assets.upload(
   { path: 'invoices/2026/may/invoice.pdf', visibility: 'public' },
 );
 
-// From a browser File
-const asset = await portabyte.assets.upload(file, { visibility: 'public' });
 ```
 
 Upload options:
@@ -46,7 +43,7 @@ Upload options:
 | ------------- | ------------------------------------------------------------------------------- | ----------- |
 | `path`        | Customer-owned address; uploading to an existing live path replaces that file   | —           |
 | `visibility`  | `'private'` or `'public'`                                                        | `'public'`  |
-| `corsOrigin`  | Browser origin allowed to perform the upload, or `'*'`                          | —           |
+| `corsOrigin`  | Browser origin allowed to perform the resulting direct upload, or `'*'`        | —           |
 
 > **Note:** a `Blob` without a content type is rejected — pass bytes with an explicit `contentType` instead.
 
@@ -82,8 +79,7 @@ for await (const asset of portabyte.assets.iterate()) {
 | Option       | Description                                                    | Default                 |
 | ------------ | -------------------------------------------------------------- | ----------------------- |
 | `apiKey`     | Project-scoped API key (`pbt_live_...`)                        | required                |
-| `projectId`  | The project every call is scoped to                           | required                |
-| `baseUrl`    | Control-plane base URL                                         | `http://localhost:8080` |
+| `baseUrl`    | Control-plane base URL                                         | `https://api.portabyte.dev` |
 | `maxRetries` | Retries for idempotent requests (network errors, 429s, 5xxs)   | `2`                     |
 | `timeoutMs`  | Per-request timeout in milliseconds                            | `30000`                 |
 | `fetch`      | Fetch implementation; inject to test or route through a proxy  | global `fetch`          |
@@ -109,7 +105,6 @@ import { ProxyAgent, fetch as proxyFetch } from 'undici';
 const agent = new ProxyAgent('http://proxy.corp:8080');
 const portabyte = new Portabyte({
   apiKey,
-  projectId,
   fetch: (url, init) => proxyFetch(url as string, { ...init, dispatcher: agent }),
 });
 ```
@@ -118,7 +113,6 @@ const portabyte = new Portabyte({
 // Trace every SDK call
 const portabyte = new Portabyte({
   apiKey,
-  projectId,
   fetch: async (url, init) => {
     const span = tracer.startSpan('portabyte');
     try {
@@ -158,7 +152,6 @@ describe('invoices', () => {
   it('lists assets', async () => {
     const portabyte = new Portabyte({
       apiKey: 'pbt_live_test',
-      projectId: '01KZYQV7S4PNY0JV6FHZ6M2GPX',
       fetch: vi.fn(async () =>
         new Response(JSON.stringify({ records: [], cursor: undefined }), {
           status: 200,

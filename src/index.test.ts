@@ -2,8 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Portabyte, VERSION } from './index';
 import { makeFetch } from './test/helpers/fetch';
 
-const PROJECT = '01KZYQV7S4PNY0JV6FHZ6M2GPX';
-
 // for tests that must never reach the network
 const neverFetch: typeof fetch = () =>
   Promise.reject(new Error('fetch must not be called'));
@@ -11,7 +9,6 @@ const neverFetch: typeof fetch = () =>
 function client(fetchImpl: typeof fetch, overrides = {}) {
   return new Portabyte({
     apiKey: 'pbt_live_test',
-    projectId: PROJECT,
     baseUrl: 'https://api.test',
     fetch: fetchImpl,
     ...overrides,
@@ -28,7 +25,6 @@ describe('Portabyte', () => {
       () =>
         new Portabyte({
           apiKey: 'sk_wrong',
-          projectId: PROJECT,
           fetch: neverFetch,
         }),
     ).toThrow(/pbt_live_/);
@@ -43,7 +39,6 @@ describe('Portabyte', () => {
 
     const portabyte = new Portabyte({
       apiKey: 'pbt_live_test',
-      projectId: PROJECT,
       baseUrl: 'https://api.test',
     });
     await portabyte.assets.list();
@@ -68,18 +63,17 @@ describe('Portabyte', () => {
   it('when the base url has a trailing slash, then it is trimmed', async () => {
     const { fetchImpl, requests } = makeFetch([
       {
-        match: (r) => r.url === 'https://api.test/v1/projects/x/assets',
+        match: (r) => r.url === 'https://api.test/v1/assets',
         status: 200,
         body: { records: [] },
       },
     ]);
     await new Portabyte({
       apiKey: 'pbt_live_test',
-      projectId: 'x',
       baseUrl: 'https://api.test/',
       fetch: fetchImpl,
     }).assets.list();
-    expect(requests[0]?.url).toBe('https://api.test/v1/projects/x/assets');
+    expect(requests[0]?.url).toBe('https://api.test/v1/assets');
   });
 
   it('when maxRetries is zero, then idempotent failures surface immediately', async () => {

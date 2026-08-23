@@ -14,7 +14,6 @@ export const VERSION = '0.1.0';
 
 export interface PortabyteOptions {
   apiKey: string;
-  projectId: string;
   baseUrl?: string;
   // idempotent requests only; mutating requests never retry
   maxRetries?: number;
@@ -22,9 +21,12 @@ export interface PortabyteOptions {
   fetch?: typeof fetch;
 }
 
-const DEFAULT_BASE_URL = 'http://localhost:8080';
+const DEFAULT_BASE_URL = 'https://api.portabyte.dev';
 
-/** Portabyte client, scoped to one project via its API key. */
+/**
+ * Server-side Portabyte client. Its API key is scoped to one project, so a
+ * project ID is never required in application configuration.
+ */
 export class Portabyte {
   readonly assets: AssetsAPI;
 
@@ -44,7 +46,7 @@ export class Portabyte {
       timeoutMs: options.timeoutMs ?? 30_000,
       sdkHeaderValue: `typescript/${VERSION}`,
     });
-    this.assets = new AssetsAPI(http, options.projectId);
+    this.assets = new AssetsAPI(http);
   }
 }
 

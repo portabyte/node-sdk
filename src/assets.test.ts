@@ -7,7 +7,6 @@ const PROJECT = '01KZYQV7S4PNY0JV6FHZ6M2GPX';
 function client(fetchImpl: typeof fetch) {
   return new Portabyte({
     apiKey: 'pbt_live_test',
-    projectId: PROJECT,
     baseUrl: 'https://api.test',
     fetch: fetchImpl,
   });
@@ -139,7 +138,7 @@ describe('url', () => {
         match: (r) => r.method === 'GET' && r.url.endsWith(`/${asset.id}/url`),
         status: 200,
         body: {
-          url: 'https://gateway.test/v1/signed/tok',
+          url: 'https://gateway.test/s/tok',
           expiresAt: '2026-08-22T00:05:00Z',
           public: false,
         },
@@ -147,7 +146,7 @@ describe('url', () => {
     ]);
     const url = await client(fetchImpl).assets.url(asset.id);
     expect(url.public).toBe(false);
-    expect(url.url).toContain('/v1/signed/');
+    expect(url.url).toContain('/s/');
   });
 });
 
