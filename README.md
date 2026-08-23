@@ -20,13 +20,13 @@ npm install @portabyte/sdk
 import { Portabyte } from '@portabyte/sdk';
 
 const portabyte = new Portabyte({
-  apiKey: process.env.PORTABYTE_API_KEY, // pbt_live_...
+  apiKey: process.env.PORTABYTE_API_KEY, // pbt_sk_live_...
 });
 ```
 
 ### Uploading a file
 
-`upload` runs the complete flow — it creates a signed upload session, PUTs the bytes to the Portabyte edge gateway, and verifies the upload server-side — then returns the live asset. If verification fails, the pending session is removed so nothing is orphaned.
+`upload` runs the complete flow — it creates a signed upload session, transfers the bytes to the Portabyte edge gateway, and verifies the upload server-side — then returns the live asset. Small files use one PUT; larger files automatically use multipart upload.
 
 ```ts
 // From bytes (server-side)
@@ -46,6 +46,27 @@ Upload options:
 | `corsOrigin`  | Browser origin allowed to perform the resulting direct upload, or `'*'`        | —           |
 
 > **Note:** a `Blob` without a content type is rejected — pass bytes with an explicit `contentType` instead.
+
+### Large & resumable uploads
+
+Portabyte automatically uses multipart upload for files of 32 MiB or larger. It sends 8 MiB parts with up to 3 concurrent requests, retries failed parts, and completes the object only after every part succeeds.
+
+For an upload that must survive a process restart, create the session yourself and persist both the session and the multipart state emitted by `onStateChange`. Call `resume` with the same file to continue it. Multipart sessions are valid for 12 hours.
+
+```ts
+const session = await portabyte.assets.create({
+  name: 'recording.mp4',
+  contentType: 'video/mp4',
+  sizeBytes: video.size,
+});
+
+await portabyte.assets.resume(session, video, {
+  state: savedState,
+  onStateChange: async (nextState) => {
+    await saveUploadState(session, nextState);
+  },
+});
+```
 
 ### Delivering files
 
@@ -78,7 +99,7 @@ for await (const asset of portabyte.assets.iterate()) {
 
 | Option       | Description                                                    | Default                 |
 | ------------ | -------------------------------------------------------------- | ----------------------- |
-| `apiKey`     | Project-scoped API key (`pbt_live_...`)                        | required                |
+| `apiKey`     | Project-scoped server API key (`pbt_sk_live_...`)               | required                |
 | `baseUrl`    | Control-plane base URL                                         | `https://api.portabyte.dev` |
 | `maxRetries` | Retries for idempotent requests (network errors, 429s, 5xxs)   | `2`                     |
 | `timeoutMs`  | Per-request timeout in milliseconds                            | `30000`                 |
@@ -151,7 +172,7 @@ import { vi, describe, it, expect } from 'vitest';
 describe('invoices', () => {
   it('lists assets', async () => {
     const portabyte = new Portabyte({
-      apiKey: 'pbt_live_test',
+      apiKey: 'pbt_sk_live_test',
       fetch: vi.fn(async () =>
         new Response(JSON.stringify({ records: [], cursor: undefined }), {
           status: 200,
