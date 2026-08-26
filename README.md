@@ -31,8 +31,8 @@ const portabyte = new Portabyte({
 ```ts
 // From bytes (server-side)
 const asset = await portabyte.assets.upload(
-  { name: 'invoice.pdf', contentType: 'application/pdf', data: bytes },
-  { path: 'invoices/2026/may/invoice.pdf', visibility: 'public' },
+  { name: 'summary.pdf', contentType: 'application/pdf', data: bytes },
+  { path: 'reports/2026/may/summary.pdf', visibility: 'public' },
 );
 
 ```
@@ -169,7 +169,7 @@ The client accepts an injected `fetch`, so your tests need no network and no glo
 import { Portabyte } from '@portabyte/sdk';
 import { vi, describe, it, expect } from 'vitest';
 
-describe('invoices', () => {
+describe('reports', () => {
   it('lists assets', async () => {
     const portabyte = new Portabyte({
       apiKey: 'pbt_sk_live_test',
