@@ -10,8 +10,8 @@ import type {
   MultipartPart,
   MultipartUploadOptions,
   MultipartUploadState,
-  UploadInput,
-  UploadOptions,
+  ResumeUploadRequest,
+  UploadRequest,
 } from './types';
 
 export const VERSION = '0.1.0';
@@ -32,7 +32,8 @@ const DEFAULT_BASE_URL = 'https://api.portabyte.dev';
  * project ID is never required in application configuration.
  */
 export class Portabyte {
-  readonly assets: AssetsAPI;
+  /** Preferred API for application file uploads. */
+  readonly files: AssetsAPI;
 
   constructor(options: PortabyteOptions) {
     if (!options.apiKey.startsWith('pbt_sk_live_')) {
@@ -50,7 +51,7 @@ export class Portabyte {
       timeoutMs: options.timeoutMs ?? 30_000,
       sdkHeaderValue: `typescript/${VERSION}`,
     });
-    this.assets = new AssetsAPI(http);
+    this.files = new AssetsAPI(http);
   }
 }
 
@@ -64,6 +65,6 @@ export type {
   MultipartPart,
   MultipartUploadOptions,
   MultipartUploadState,
-  UploadInput,
-  UploadOptions,
+  ResumeUploadRequest,
+  UploadRequest,
 };

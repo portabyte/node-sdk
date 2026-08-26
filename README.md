@@ -26,26 +26,27 @@ const portabyte = new Portabyte({
 
 ### Uploading a file
 
-`upload` runs the complete flow — it creates a signed upload session, transfers the bytes to the Portabyte edge gateway, and verifies the upload server-side — then returns the live asset. Small files use one PUT; larger files automatically use multipart upload.
+Pass a browser `File` to `files.upload`. The SDK creates the upload session, transfers the bytes, verifies the upload, and returns the live asset.
 
 ```ts
-// From bytes (server-side)
-const asset = await portabyte.assets.upload(
-  { name: 'summary.pdf', contentType: 'application/pdf', data: bytes },
-  { path: 'reports/2026/may/summary.pdf', visibility: 'public' },
-);
-
+const asset = await portabyte.files.upload({
+  file,
+  path: 'reports/2026/may/summary.pdf',
+  visibility: 'public',
+});
 ```
 
-Upload options:
+For a `Blob` without a filename or raw bytes, provide `name` and `contentType`:
 
-| Option        | Description                                                                     | Default     |
-| ------------- | ------------------------------------------------------------------------------- | ----------- |
-| `path`        | Customer-owned address; uploading to an existing live path replaces that file   | —           |
-| `visibility`  | `'private'` or `'public'`                                                        | `'public'`  |
-| `corsOrigin`  | Browser origin allowed to perform the resulting direct upload, or `'*'`        | —           |
+```ts
+await portabyte.files.upload({
+  file: bytes,
+  name: 'summary.pdf',
+  contentType: 'application/pdf',
+});
+```
 
-> **Note:** a `Blob` without a content type is rejected — pass bytes with an explicit `contentType` instead.
+`path`, `visibility`, and `corsOrigin` are optional. Uploading to an existing `path` replaces the current live file at that path.
 
 ### Large & resumable uploads
 
@@ -54,13 +55,14 @@ Portabyte automatically uses multipart upload for files of 32 MiB or larger. It 
 For an upload that must survive a process restart, create the session yourself and persist both the session and the multipart state emitted by `onStateChange`. Call `resume` with the same file to continue it. Multipart sessions are valid for 12 hours.
 
 ```ts
-const session = await portabyte.assets.create({
+const session = await portabyte.files.create({
   name: 'recording.mp4',
   contentType: 'video/mp4',
   sizeBytes: video.size,
 });
 
-await portabyte.assets.resume(session, video, {
+await portabyte.files.resume(session, {
+  file: video,
   state: savedState,
   onStateChange: async (nextState) => {
     await saveUploadState(session, nextState);
@@ -71,7 +73,7 @@ await portabyte.assets.resume(session, video, {
 ### Delivering files
 
 ```ts
-const { url, expiresAt, public } = await portabyte.assets.url(asset.id);
+const { url, expiresAt, public } = await portabyte.files.url(asset.id);
 ```
 
 Public assets return a stable, cacheable URL (`expiresAt` is absent). Private assets return a signed URL that works for 5 minutes; mint a fresh one whenever needed.
@@ -79,20 +81,10 @@ Public assets return a stable, cacheable URL (`expiresAt` is absent). Private as
 ### Managing assets
 
 ```ts
-const page = await portabyte.assets.list({ limit: 20 });
-const next = await portabyte.assets.list({ limit: 20, cursor: page.cursor });
-const one = await portabyte.assets.get(asset.id);
-await portabyte.assets.remove(asset.id);
-```
-
-### Auto-pagination
-
-`iterate` yields every asset in the project, fetching pages transparently:
-
-```ts
-for await (const asset of portabyte.assets.iterate()) {
-  // ...
-}
+const page = await portabyte.files.list({ limit: 20 });
+const next = await portabyte.files.list({ limit: 20, cursor: page.cursor });
+const one = await portabyte.files.get(asset.id);
+await portabyte.files.remove(asset.id);
 ```
 
 ## Configuration
@@ -153,7 +145,7 @@ Failed API calls throw a `PortabyteError` carrying `status` (0 when the request 
 import { PortabyteError } from '@portabyte/sdk';
 
 try {
-  await portabyte.assets.upload(input);
+  await portabyte.files.upload(input);
 } catch (error) {
   if (error instanceof PortabyteError && error.status === 429) {
     // respect the rate-limit window before retrying
@@ -180,7 +172,7 @@ describe('reports', () => {
       ),
     });
 
-    const page = await portabyte.assets.list();
+    const page = await portabyte.files.list();
     expect(page.records).toEqual([]);
   });
 });

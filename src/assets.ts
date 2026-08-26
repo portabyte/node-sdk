@@ -9,8 +9,8 @@ import type {
   MultipartPart,
   MultipartUploadOptions,
   MultipartUploadState,
-  UploadInput,
-  UploadOptions,
+  ResumeUploadRequest,
+  UploadRequest,
 } from './types';
 
 export interface ListOptions {
@@ -44,21 +44,19 @@ export class AssetsAPI {
     });
   }
 
-  /**
-   * Uploads end to end: creates a session, PUTs the bytes to the edge
-   * gateway, and verifies server-side. A failed verification removes the
-   * pending session so nothing is orphaned.
-   */
-  async upload(
-    input: UploadInput,
-    options: UploadOptions = {},
-  ): Promise<Asset> {
-    const described = describeInput(input);
-    const { multipart, ...createOptions } = options;
+  /** Uploads a File, Blob, or bytes end to end. */
+  async upload(request: UploadRequest): Promise<Asset> {
+    const described = describeUpload(request);
+    const { file, multipart } = request;
+    const createOptions = {
+      ...(request.path !== undefined && { path: request.path }),
+      ...(request.visibility !== undefined && { visibility: request.visibility }),
+      ...(request.corsOrigin !== undefined && { corsOrigin: request.corsOrigin }),
+    };
     const session = await this.create({ ...described, ...createOptions });
     await this.transfer(
       session,
-      toBody(input),
+      file,
       described.contentType,
       multipart,
     );
@@ -81,13 +79,14 @@ export class AssetsAPI {
    */
   async resume(
     session: CreateSession,
-    input: UploadInput,
-    options: MultipartUploadOptions = {},
+    request: ResumeUploadRequest,
   ): Promise<Asset> {
-    const described = describeInput(input);
+    const contentType =
+      request.contentType ??
+      (request.file instanceof Blob ? request.file.type : '');
     if (
-      described.sizeBytes !== session.sizeBytes ||
-      described.contentType !== session.contentType
+      fileSize(request.file) !== session.sizeBytes ||
+      contentType !== session.contentType
     ) {
       throw new PortabyteError(
         'The selected file does not match this upload session.',
@@ -95,7 +94,7 @@ export class AssetsAPI {
         'invalid_argument',
       );
     }
-    await this.transfer(session, toBody(input), described.contentType, options);
+    await this.transfer(session, request.file, contentType, request);
     return this.http.request<Asset>({
       method: 'POST',
       path: this.path(`assets/${session.id}/uploaded`),
@@ -111,20 +110,6 @@ export class AssetsAPI {
       method: 'GET',
       path: this.path(`assets${query}`),
     });
-  }
-
-  /** Yields every asset in the project, fetching pages transparently. */
-  async *iterate(
-    options: Omit<ListOptions, 'cursor'> = {},
-  ): AsyncGenerator<Asset> {
-    let cursor: string | undefined;
-    do {
-      const page: ListAssetsResult = await this.list({ ...options, cursor });
-      for (const asset of page.records) {
-        yield asset;
-      }
-      cursor = page.cursor;
-    } while (cursor);
   }
 
   async get(assetID: string): Promise<Asset> {
@@ -259,35 +244,44 @@ export class AssetsAPI {
   }
 }
 
-function describeInput(input: UploadInput): {
+function describeUpload(request: UploadRequest): {
   name: string;
   contentType: string;
   sizeBytes: number;
 } {
-  if (input instanceof Blob) {
-    const file = input as File;
-    if (!input.type) {
-      throw new PortabyteError(
-        'The file has no content type; pass bytes with an explicit contentType instead.',
-        0,
-        'invalid_argument',
-      );
-    }
-    return {
-      name: file.name || 'upload',
-      contentType: input.type,
-      sizeBytes: input.size,
-    };
+  const filename = request.name ?? fileName(request.file);
+  const mimeType =
+    request.contentType ?? (request.file instanceof Blob ? request.file.type : '');
+  if (!filename) {
+    throw new PortabyteError(
+      'A file name is required when uploading a Blob or bytes.',
+      0,
+      'invalid_argument',
+    );
+  }
+  if (!mimeType) {
+    throw new PortabyteError(
+      'A content type is required when uploading bytes or a Blob without a type.',
+      0,
+      'invalid_argument',
+    );
   }
   return {
-    name: input.name,
-    contentType: input.contentType,
-    sizeBytes: input.data.byteLength,
+    name: filename,
+    contentType: mimeType,
+    sizeBytes:
+      request.file instanceof Blob ? request.file.size : request.file.byteLength,
   };
 }
 
-function toBody(input: UploadInput): Blob | Uint8Array {
-  return input instanceof Blob ? input : input.data;
+function fileName(file: Blob | Uint8Array): string | undefined {
+  if (!(file instanceof Blob)) return undefined;
+  const name = (file as Blob & { name?: unknown }).name;
+  return typeof name === 'string' && name.length > 0 ? name : undefined;
+}
+
+function fileSize(file: Blob | Uint8Array): number {
+  return file instanceof Blob ? file.size : file.byteLength;
 }
 
 function sliceBody(

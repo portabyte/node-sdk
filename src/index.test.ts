@@ -41,7 +41,7 @@ describe('Portabyte', () => {
       apiKey: 'pbt_sk_live_test',
       baseUrl: 'https://api.test',
     });
-    await portabyte.assets.list();
+    await portabyte.files.list();
 
     expect(fetchMock).toHaveBeenCalledOnce();
   });
@@ -54,7 +54,7 @@ describe('Portabyte', () => {
         body: { records: [] },
       },
     ]);
-    await client(fetchImpl).assets.list();
+    await client(fetchImpl).files.list();
     expect(requests[0]?.headers['X-Portabyte-SDK']).toBe(
       `typescript/${VERSION}`,
     );
@@ -72,7 +72,7 @@ describe('Portabyte', () => {
       apiKey: 'pbt_sk_live_test',
       baseUrl: 'https://api.test/',
       fetch: fetchImpl,
-    }).assets.list();
+    }).files.list();
     expect(requests[0]?.url).toBe('https://api.test/v1/assets');
   });
 
@@ -85,7 +85,7 @@ describe('Portabyte', () => {
       },
     ]);
     const error = await client(fetchImpl, { maxRetries: 0 })
-      .assets.list()
+      .files.list()
       .catch((e) => e);
     expect(error.status).toBe(429);
     expect(requests.length).toBe(1);

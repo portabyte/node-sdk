@@ -55,9 +55,24 @@ export interface MultipartUploadOptions {
   concurrency?: number;
 }
 
-export type UploadOptions = CreateSessionOptions & {
+/**
+ * The preferred input for an end-to-end upload.
+ *
+ * Pass a browser `File` directly. For a `Blob` without a filename or raw
+ * bytes, provide `name` and `contentType`.
+ */
+export interface UploadRequest extends CreateSessionOptions {
+  file: Blob | Uint8Array;
+  name?: string;
+  contentType?: string;
   multipart?: MultipartUploadOptions;
-};
+}
+
+/** Input for resuming a previously-created multipart upload. */
+export interface ResumeUploadRequest extends MultipartUploadOptions {
+  file: Blob | Uint8Array;
+  contentType?: string;
+}
 
 export interface ListAssetsResult {
   records: Asset[];
@@ -71,7 +86,3 @@ export interface AssetDeliveryURL {
   expiresAt?: string;
   public: boolean;
 }
-
-// browser File/Blob, or raw bytes with metadata
-export type UploadInput =
-  Blob | { name: string; contentType: string; data: Uint8Array };

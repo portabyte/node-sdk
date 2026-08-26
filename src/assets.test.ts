@@ -30,6 +30,43 @@ const session = {
 };
 
 describe('upload', () => {
+  it('when given a browser file request, then one call creates, transfers, and confirms it', async () => {
+    const { fetchImpl, requests } = makeFetch([
+      {
+        match: (r) => r.method === 'POST' && r.url.endsWith('/assets'),
+        status: 201,
+        body: session,
+      },
+      {
+        match: (r) => r.method === 'PUT' && r.url === session.uploadUrl,
+        status: 201,
+      },
+      {
+        match: (r) => r.method === 'POST' && r.url.endsWith(`/${asset.id}/uploaded`),
+        status: 200,
+        body: asset,
+      },
+    ]);
+    const file = Object.assign(new Blob(['png'], { type: 'image/png' }), {
+      name: 'logo.png',
+    });
+
+    await client(fetchImpl).files.upload({
+      file,
+      path: 'brand/logo.png',
+      visibility: 'public',
+    });
+
+    expect(JSON.parse(String(requests[0]?.body))).toEqual({
+      name: 'logo.png',
+      contentType: 'image/png',
+      sizeBytes: 3,
+      path: 'brand/logo.png',
+      visibility: 'public',
+    });
+    expect(requests).toHaveLength(3);
+  });
+
   it('when a session is multipart, then parts upload before completion and verification', async () => {
     const partSize = 5 * 1024 * 1024;
     const multipartSession = {
@@ -72,10 +109,10 @@ describe('upload', () => {
       },
     ]);
 
-    await client(fetchImpl).assets.upload({
+    await client(fetchImpl).files.upload({
+      file: new Uint8Array(partSize + 1),
       name: 'video.mp4',
       contentType: 'video/mp4',
-      data: new Uint8Array(partSize + 1),
     });
 
     expect(requests).toHaveLength(6);
@@ -98,7 +135,7 @@ describe('upload', () => {
       },
     ]);
 
-    await client(fetchImpl).assets.create({
+    await client(fetchImpl).files.create({
       name: 'logo.png',
       contentType: 'image/png',
       sizeBytes: 3,
@@ -130,14 +167,13 @@ describe('upload', () => {
       },
     ]);
 
-    const result = await client(fetchImpl).assets.upload(
-      {
-        name: 'logo.png',
-        contentType: 'image/png',
-        data: new Uint8Array([1, 2, 3]),
-      },
-      { path: 'brand/logo.png', visibility: 'public' },
-    );
+    const result = await client(fetchImpl).files.upload({
+      file: new Uint8Array([1, 2, 3]),
+      name: 'logo.png',
+      contentType: 'image/png',
+      path: 'brand/logo.png',
+      visibility: 'public',
+    });
 
     expect(result.id).toBe(asset.id);
     expect(requests[0]?.headers.Authorization).toBe('Bearer pbt_sk_live_test');
@@ -172,10 +208,10 @@ describe('upload', () => {
     ]);
 
     await expect(
-      client(fetchImpl).assets.upload({
+      client(fetchImpl).files.upload({
+        file: new Uint8Array([1]),
         name: 'logo.png',
         contentType: 'image/png',
-        data: new Uint8Array([1]),
       }),
     ).rejects.toMatchObject({ code: 'invalid_upload' });
     expect(requests.at(-1)?.method).toBe('DELETE');
@@ -184,7 +220,7 @@ describe('upload', () => {
   it('when a Blob has no content type, then upload rejects before any request', async () => {
     const { fetchImpl, requests } = makeFetch([]);
     await expect(
-      client(fetchImpl).assets.upload(new Blob(['x'])),
+      client(fetchImpl).files.upload({ file: new Blob(['x']), name: 'x.txt' }),
     ).rejects.toThrow(/content type/);
     expect(requests.length).toBe(0);
   });
@@ -203,33 +239,9 @@ describe('url', () => {
         },
       },
     ]);
-    const url = await client(fetchImpl).assets.url(asset.id);
+    const url = await client(fetchImpl).files.url(asset.id);
     expect(url.public).toBe(false);
     expect(url.url).toContain('/s/');
-  });
-});
-
-describe('iterate', () => {
-  it('when iterating, then every page is fetched transparently', async () => {
-    const { fetchImpl, requests } = makeFetch([
-      {
-        match: (r) => !r.url.includes('cursor'),
-        status: 200,
-        body: { records: [{ ...asset, id: '01AAAA' }], cursor: 'next' },
-      },
-      {
-        match: (r) => r.url.includes('cursor=next'),
-        status: 200,
-        body: { records: [{ ...asset, id: '01BBBB' }] },
-      },
-    ]);
-
-    const ids: string[] = [];
-    for await (const a of client(fetchImpl).assets.iterate({ limit: 1 })) {
-      ids.push(a.id);
-    }
-    expect(ids).toEqual(['01AAAA', '01BBBB']);
-    expect(requests.length).toBe(2);
   });
 });
 
@@ -242,7 +254,7 @@ describe('list', () => {
         body: { records: [] },
       },
     ]);
-    await client(fetchImpl).assets.list({ cursor: 'next', limit: 5 });
+    await client(fetchImpl).files.list({ cursor: 'next', limit: 5 });
     expect(requests[0]?.url).toContain('/assets?cursor=next&limit=5');
   });
 });
@@ -253,7 +265,7 @@ describe('remove', () => {
       { match: (r) => r.method === 'DELETE', status: 204 },
     ]);
     await expect(
-      client(fetchImpl).assets.remove(asset.id),
+      client(fetchImpl).files.remove(asset.id),
     ).resolves.toBeUndefined();
   });
 });
@@ -277,7 +289,7 @@ describe('cancel', () => {
       },
     ]);
 
-    await client(fetchImpl).assets.cancel(multipartSession, {
+    await client(fetchImpl).files.cancel(multipartSession, {
       uploadId: 'upload-1',
       parts: [],
     });
