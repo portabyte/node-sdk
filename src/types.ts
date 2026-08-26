@@ -15,7 +15,7 @@ export interface Asset {
 
 export interface CreateSessionOptions {
   /**
-   * Customer-owned address, e.g. `invoices/2026/may/x.pdf` (1–32 segments of
+   * Customer-owned address, e.g. `reports/2026/may/x.pdf` (1–32 segments of
    * letters, digits, `.`, `_`, `~`, `-`). Uploading to a path that already
    * has a live file replaces it.
    */
