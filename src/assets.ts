@@ -18,7 +18,7 @@ export interface ListOptions {
   limit?: number;
 }
 
-export class AssetsAPI {
+export class FilesAPI {
   constructor(private readonly http: HttpClient) {}
 
   /** Creates a signed upload session. Prefer {@link upload}, which runs every step. */

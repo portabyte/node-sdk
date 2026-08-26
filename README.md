@@ -1,58 +1,70 @@
-# Portabyte TypeScript SDK
+# Portabyte Node.js SDK
 
-The Portabyte TypeScript SDK provides convenient server-side access to the Portabyte API. It covers the full file lifecycle: signed upload sessions that stream straight to the edge, delivery URLs for public and private files, and asset management.
+Upload, deliver, and manage files from trusted TypeScript server code. The SDK has no runtime package dependencies and uses your runtime's built-in `fetch`.
 
-It is written in TypeScript, ships with zero dependencies on the native `fetch` API, and runs in trusted Node 18+, Bun, Deno, and edge server runtimes.
+> Keep `pbt_sk_live_` API keys on your server. Do not use this SDK in browser code, mobile apps, or browser extensions.
 
-## Requirements
+## Install
 
-Node.js >= 18 or another trusted server runtime with `fetch` support.
-
-## Installation
-
-```
-npm install @portabyte/sdk
+```sh
+npm install @portabyte/node
 ```
 
-## Usage
+The SDK requires Node.js 18 or later.
+
+## Upload a file
+
+Create a client with a project API key, then pass a file to `files.upload`. The SDK creates the upload session, transfers the bytes, confirms the asset, and returns the live file record.
 
 ```ts
-import { Portabyte } from '@portabyte/sdk';
+import { readFile } from 'node:fs/promises';
+import { Portabyte } from '@portabyte/node';
 
 const portabyte = new Portabyte({
-  apiKey: process.env.PORTABYTE_API_KEY, // pbt_sk_live_...
+  apiKey: process.env.PORTABYTE_API_KEY!,
 });
+
+const asset = await portabyte.files.upload({
+  file: await readFile('./summary.pdf'),
+  name: 'summary.pdf',
+  contentType: 'application/pdf',
+  visibility: 'public',
+});
+
+console.log(asset.publicUrl);
 ```
 
-### Uploading a file
-
-Pass a browser `File` to `files.upload`. The SDK creates the upload session, transfers the bytes, verifies the upload, and returns the live asset.
+When your server receives a web `File`, such as through a route handler's `FormData`, pass it directly. The SDK reads its filename, MIME type, and size:
 
 ```ts
 const asset = await portabyte.files.upload({
   file,
   path: 'reports/2026/may/summary.pdf',
-  visibility: 'public',
+  visibility: 'private',
 });
 ```
 
-For a `Blob` without a filename or raw bytes, provide `name` and `contentType`:
+Use `path` when you want one current file at a stable application-owned address. Uploading another confirmed file to that path replaces the current one.
+
+## Deliver a file
+
+Request a delivery URL with the file's ID:
 
 ```ts
-await portabyte.files.upload({
-  file: bytes,
-  name: 'summary.pdf',
-  contentType: 'application/pdf',
-});
+const delivery = await portabyte.files.url(asset.id);
+
+if (delivery.public) {
+  console.log(delivery.url);
+} else {
+  console.log(delivery.expiresAt);
+}
 ```
 
-`path`, `visibility`, and `corsOrigin` are optional. Uploading to an existing `path` replaces the current live file at that path.
+Public files return stable URLs. Private files return short-lived signed URLs. Request a new private URL whenever an authorized recipient needs the file.
 
-### Large & resumable uploads
+## Resume a large upload
 
-Portabyte automatically uses multipart upload for files of 32 MiB or larger. It sends 8 MiB parts with up to 3 concurrent requests, retries failed parts, and completes the object only after every part succeeds.
-
-For an upload that must survive a process restart, create the session yourself and persist both the session and the multipart state emitted by `onStateChange`. Call `resume` with the same file to continue it. Multipart sessions are valid for 12 hours.
+Files of 32 MiB or larger use multipart upload automatically. For an upload that must survive a process restart, create a session and persist multipart state after each completed part:
 
 ```ts
 const session = await portabyte.files.create({
@@ -61,136 +73,61 @@ const session = await portabyte.files.create({
   sizeBytes: video.size,
 });
 
-await portabyte.files.resume(session, {
+const asset = await portabyte.files.resume(session, {
   file: video,
-  state: savedState,
-  onStateChange: async (nextState) => {
-    await saveUploadState(session, nextState);
-  },
+  state: savedUploadState,
+  onStateChange: saveUploadState,
 });
 ```
 
-### Delivering files
+Resume with the same byte size and MIME type. Multipart upload sessions expire after 12 hours.
+
+## Manage files
+
+Use the file ID to retrieve metadata, list a project page, or delete a file:
 
 ```ts
-const { url, expiresAt, public } = await portabyte.files.url(asset.id);
-```
-
-Public assets return a stable, cacheable URL (`expiresAt` is absent). Private assets return a signed URL that works for 5 minutes; mint a fresh one whenever needed.
-
-### Managing assets
-
-```ts
+const file = await portabyte.files.get(asset.id);
 const page = await portabyte.files.list({ limit: 20 });
-const next = await portabyte.files.list({ limit: 20, cursor: page.cursor });
-const one = await portabyte.files.get(asset.id);
-await portabyte.files.remove(asset.id);
+await portabyte.files.remove(file.id);
 ```
 
-## Configuration
+Pass `page.cursor` to `files.list` to retrieve the next page.
 
-| Option       | Description                                                    | Default                 |
-| ------------ | -------------------------------------------------------------- | ----------------------- |
-| `apiKey`     | Project-scoped server API key (`pbt_sk_live_...`)               | required                |
-| `baseUrl`    | Control-plane base URL                                         | `https://api.portabyte.dev` |
-| `maxRetries` | Retries for idempotent requests (network errors, 429s, 5xxs)   | `2`                     |
-| `timeoutMs`  | Per-request timeout in milliseconds                            | `30000`                 |
-| `fetch`      | Fetch implementation; inject to test or route through a proxy  | global `fetch`          |
+## Configure the client
 
-### Timeout
+| Option | Description | Default |
+| --- | --- | --- |
+| `apiKey` | Project API key that starts with `pbt_sk_live_` | Required |
+| `baseUrl` | Control-plane API URL | `https://api.portabyte.dev` |
+| `maxRetries` | Retries for idempotent requests | `2` |
+| `timeoutMs` | Timeout for each request in milliseconds; set `0` to disable | `30000` |
+| `fetch` | Custom `fetch` implementation | Runtime `fetch` |
 
-Every request runs under `timeoutMs`. Node's `fetch` has no default timeout; the SDK applies one so hung requests cannot hang forever. Set `timeoutMs: 0` to disable.
+The SDK retries `GET` requests and upload-byte requests after network failures, `429` responses, and `5xx` responses. It does not retry state-changing API calls.
 
-### Network retries
+## Handle errors
 
-Idempotent requests (GETs and the upload PUT) retry automatically on network errors, 429s, and 5xxs with capped exponential backoff and full jitter, honoring the API's `Retry-After` header.
-
-> **Note:** mutating requests (`create`, confirm, `remove`) never retry — a replayed create would open a second upload session.
-
-### Custom fetch
-
-The `fetch` option replaces the global `fetch` for every request the SDK makes. Most callers never need it; it exists for corporate proxies, tracing, and runtimes without a global `fetch`:
+Failed requests throw `PortabyteError`, which includes the HTTP status, a stable error code, and a request ID when the API returns one:
 
 ```ts
-// Route SDK traffic through a corporate proxy (undici)
-import { ProxyAgent, fetch as proxyFetch } from 'undici';
-
-const agent = new ProxyAgent('http://proxy.corp:8080');
-const portabyte = new Portabyte({
-  apiKey,
-  fetch: (url, init) => proxyFetch(url as string, { ...init, dispatcher: agent }),
-});
-```
-
-```ts
-// Trace every SDK call
-const portabyte = new Portabyte({
-  apiKey,
-  fetch: async (url, init) => {
-    const span = tracer.startSpan('portabyte');
-    try {
-      return await fetch(url, init);
-    } finally {
-      span.end();
-    }
-  },
-});
-```
-
-## Errors
-
-Failed API calls throw a `PortabyteError` carrying `status` (0 when the request never reached the API), a machine-readable `code` such as `rate_limited` or `api_key_invalid`, and the API's `requestId`:
-
-```ts
-import { PortabyteError } from '@portabyte/sdk';
+import { PortabyteError } from '@portabyte/node';
 
 try {
-  await portabyte.files.upload(input);
+  await portabyte.files.upload(uploadRequest);
 } catch (error) {
-  if (error instanceof PortabyteError && error.status === 429) {
-    // respect the rate-limit window before retrying
+  if (error instanceof PortabyteError) {
+    console.error(error.status, error.code, error.requestId);
   }
 }
 ```
 
-## Testing
+## Learn more
 
-The client accepts an injected `fetch`, so your tests need no network and no global mocking. Any fetch-shaped function works — for example, one that returns a fixed response:
-
-```ts
-import { Portabyte } from '@portabyte/sdk';
-import { vi, describe, it, expect } from 'vitest';
-
-describe('reports', () => {
-  it('lists assets', async () => {
-    const portabyte = new Portabyte({
-      apiKey: 'pbt_sk_live_test',
-      fetch: vi.fn(async () =>
-        new Response(JSON.stringify({ records: [], cursor: undefined }), {
-          status: 200,
-        }),
-      ),
-    });
-
-    const page = await portabyte.files.list();
-    expect(page.records).toEqual([]);
-  });
-});
-```
-
-## Support
-
-For issues and feature requests, open an issue on GitHub. For API questions, see the Portabyte API reference.
-
-## Development
-
-| Command          | Description                           |
-| ---------------- | ------------------------------------- |
-| `pnpm build`     | Build with tsup (CJS + ESM, dts)     |
-| `pnpm test`      | Run tests with vitest                 |
-| `pnpm lint`      | Lint with eslint                      |
-| `pnpm typecheck` | Type-check with tsc                   |
-| `pnpm verify`    | Lint, test, and type-check in one run |
+- [Getting started](https://portabyte.dev/docs/getting-started/node-sdk)
+- [REST API reference](https://portabyte.dev/docs/api-reference)
+- [Browser uploads](https://portabyte.dev/docs/upload-delivery/browser-uploads)
+- [Public and private files](https://portabyte.dev/docs/upload-delivery/public-and-private-files)
 
 ## License
 

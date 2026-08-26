@@ -1,7 +1,7 @@
 {
-  "name": "@portabyte/sdk",
+  "name": "@portabyte/node",
   "version": "0.1.0",
-  "description": "Official TypeScript SDK for Portabyte file infrastructure.",
+  "description": "Official Node.js SDK for Portabyte file infrastructure.",
   "license": "MIT",
   "private": true,
   "type": "module",

@@ -1,4 +1,4 @@
-import { AssetsAPI } from './assets';
+import { FilesAPI } from './assets';
 import { HttpClient } from './client';
 import { PortabyteError } from './errors';
 import type {
@@ -33,7 +33,7 @@ const DEFAULT_BASE_URL = 'https://api.portabyte.dev';
  */
 export class Portabyte {
   /** Preferred API for application file uploads. */
-  readonly files: AssetsAPI;
+  readonly files: FilesAPI;
 
   constructor(options: PortabyteOptions) {
     if (!options.apiKey.startsWith('pbt_sk_live_')) {
@@ -51,7 +51,7 @@ export class Portabyte {
       timeoutMs: options.timeoutMs ?? 30_000,
       sdkHeaderValue: `typescript/${VERSION}`,
     });
-    this.files = new AssetsAPI(http);
+    this.files = new FilesAPI(http);
   }
 }
 
