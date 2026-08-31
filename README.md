@@ -110,7 +110,7 @@ The SDK retries `GET` requests and upload-byte requests after network failures, 
 
 Keep your API key on your server. Prepare the upload on your server, return the browser-safe session to the client, then confirm it on your server after the browser has uploaded the bytes.
 
-Before using this flow, set your frontend's origin once in **Console → Project → Settings → Upload defaults → Default CORS origin** (for example, `https://app.example.com`). The SDK uses that project default when `corsOrigin` is omitted. Pass `corsOrigin` only when a particular upload needs a different allowed origin.
+Before using this flow, set your frontend's origin once under **Upload defaults** in your project's **Settings** in the Console (for example, `https://app.example.com`). The SDK uses that project default when `corsOrigin` is omitted. Pass `corsOrigin` only when a particular upload needs a different allowed origin.
 
 ```ts
 // Your server route: POST /api/uploads/prepare
