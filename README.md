@@ -96,15 +96,47 @@ Pass `page.cursor` to `files.list` to retrieve the next page.
 
 ## Configure the client
 
-| Option | Description | Default |
-| --- | --- | --- |
-| `apiKey` | Project API key that starts with `pbt_sk_live_` | Required |
-| `baseUrl` | Control-plane API URL | `https://api.portabyte.dev` |
-| `maxRetries` | Retries for idempotent requests | `2` |
-| `timeoutMs` | Timeout for each request in milliseconds; set `0` to disable | `30000` |
-| `fetch` | Custom `fetch` implementation | Runtime `fetch` |
+| Option       | Description                                                  | Default                     |
+| ------------ | ------------------------------------------------------------ | --------------------------- |
+| `apiKey`     | Project API key that starts with `pbt_sk_live_`              | Required                    |
+| `baseUrl`    | Control-plane API URL                                        | `https://api.portabyte.dev` |
+| `maxRetries` | Retries for idempotent requests                              | `2`                         |
+| `timeoutMs`  | Timeout for each request in milliseconds; set `0` to disable | `30000`                     |
+| `fetch`      | Custom `fetch` implementation                                | Runtime `fetch`             |
 
 The SDK retries `GET` requests and upload-byte requests after network failures, `429` responses, and `5xx` responses. It does not retry state-changing API calls.
+
+## Upload directly from a browser
+
+Keep your API key on your server. Prepare the upload on your server, return the browser-safe session to the client, then confirm it on your server after the browser has uploaded the bytes.
+
+Before using this flow, set your frontend's origin once in **Console → Project → Settings → Upload defaults → Default CORS origin** (for example, `https://app.example.com`). The SDK uses that project default when `corsOrigin` is omitted. Pass `corsOrigin` only when a particular upload needs a different allowed origin.
+
+```ts
+// Your server route: POST /api/uploads/prepare
+const upload = await portabyte.files.prepareBrowserUpload({
+  name: file.name,
+  contentType: file.type,
+  sizeBytes: file.size,
+  visibility: 'public',
+});
+
+// Return `upload` to the browser. Never return PORTABYTE_API_KEY.
+```
+
+```ts
+// Browser code
+await fetch(upload.uploadUrl, {
+  method: 'PUT',
+  headers: { 'Content-Type': file.type },
+  body: file,
+});
+
+// Tell your server the upload completed, then on the server:
+const asset = await portabyte.files.confirm(upload.assetId);
+```
+
+For multipart sessions, use `uploadMode`, `partSize`, and `maxConcurrency` to upload parts through the same signed upload URL. Your server must still call `confirm` once the multipart upload completes.
 
 ## Handle errors
 

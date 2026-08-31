@@ -1,9 +1,8 @@
 {
   "name": "@portabyte/node",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Official Node.js SDK for Portabyte file infrastructure.",
   "license": "MIT",
-  "private": true,
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -18,6 +17,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "lint": "eslint src",

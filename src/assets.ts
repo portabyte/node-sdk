@@ -3,8 +3,9 @@ import { PortabyteError } from './errors';
 import type {
   Asset,
   AssetDeliveryURL,
+  BrowserUploadSession,
   CreateSession,
-  CreateSessionOptions,
+  CreateSessionRequest,
   ListAssetsResult,
   MultipartPart,
   MultipartUploadOptions,
@@ -22,13 +23,7 @@ export class FilesAPI {
   constructor(private readonly http: HttpClient) {}
 
   /** Creates a signed upload session. Prefer {@link upload}, which runs every step. */
-  async create(
-    input: {
-      name: string;
-      contentType: string;
-      sizeBytes: number;
-    } & CreateSessionOptions,
-  ): Promise<CreateSession> {
+  async create(input: CreateSessionRequest): Promise<CreateSession> {
     const body = {
       name: input.name,
       contentType: input.contentType,
@@ -41,6 +36,38 @@ export class FilesAPI {
       method: 'POST',
       path: this.path('assets'),
       body,
+    });
+  }
+
+  /**
+   * Prepares a direct browser upload. Call this only from your trusted server,
+   * then return the result to the browser. The browser uploads bytes directly
+   * to uploadUrl; call {@link confirm} from your server once it reports success.
+   */
+  async prepareBrowserUpload(
+    input: CreateSessionRequest,
+  ): Promise<BrowserUploadSession> {
+    const session = await this.create(input);
+    return {
+      assetId: session.id,
+      uploadUrl: session.uploadUrl,
+      uploadExpiresAt: session.uploadExpiresAt,
+      uploadMode: session.uploadMode,
+      ...(session.partSize !== undefined && { partSize: session.partSize }),
+      ...(session.maxConcurrency !== undefined && {
+        maxConcurrency: session.maxConcurrency,
+      }),
+    };
+  }
+
+  /**
+   * Confirms a completed direct upload and returns its live asset record.
+   * Call this from your trusted server, never from a browser.
+   */
+  async confirm(assetID: string): Promise<Asset> {
+    return this.http.request<Asset>({
+      method: 'POST',
+      path: this.path(`assets/${assetID}/uploaded`),
     });
   }
 
@@ -61,10 +88,7 @@ export class FilesAPI {
       multipart,
     );
     try {
-      return await this.http.request<Asset>({
-        method: 'POST',
-        path: this.path(`assets/${session.id}/uploaded`),
-      });
+      return await this.confirm(session.id);
     } catch (error) {
       if (error instanceof PortabyteError && error.status !== 0) {
         await this.remove(session.id).catch(() => undefined);
@@ -95,10 +119,7 @@ export class FilesAPI {
       );
     }
     await this.transfer(session, request.file, contentType, request);
-    return this.http.request<Asset>({
-      method: 'POST',
-      path: this.path(`assets/${session.id}/uploaded`),
-    });
+    return this.confirm(session.id);
   }
 
   async list(options: ListOptions = {}): Promise<ListAssetsResult> {

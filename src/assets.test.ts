@@ -30,6 +30,46 @@ const session = {
 };
 
 describe('upload', () => {
+  it('when preparing a browser upload, then it returns only the browser-safe session fields', async () => {
+    const { fetchImpl, requests } = makeFetch([
+      {
+        match: (r) => r.method === 'POST' && r.url.endsWith('/assets'),
+        status: 201,
+        body: session,
+      },
+    ]);
+
+    const result = await client(fetchImpl).files.prepareBrowserUpload({
+      name: 'logo.png',
+      contentType: 'image/png',
+      sizeBytes: 3,
+      corsOrigin: 'https://app.example.com',
+    });
+
+    expect(result).toEqual({
+      assetId: asset.id,
+      uploadUrl: session.uploadUrl,
+      uploadExpiresAt: session.uploadExpiresAt,
+      uploadMode: 'single',
+    });
+    expect(JSON.parse(String(requests[0]?.body))).toMatchObject({
+      corsOrigin: 'https://app.example.com',
+    });
+  });
+
+  it('when confirming a browser upload, then it returns the live asset', async () => {
+    const { fetchImpl, requests } = makeFetch([
+      {
+        match: (r) => r.method === 'POST' && r.url.endsWith(`/${asset.id}/uploaded`),
+        status: 200,
+        body: asset,
+      },
+    ]);
+
+    await expect(client(fetchImpl).files.confirm(asset.id)).resolves.toEqual(asset);
+    expect(requests).toHaveLength(1);
+  });
+
   it('when given a browser file request, then one call creates, transfers, and confirms it', async () => {
     const { fetchImpl, requests } = makeFetch([
       {

@@ -25,6 +25,13 @@ export interface CreateSessionOptions {
   corsOrigin?: string;
 }
 
+/** Input used by a trusted server to prepare an upload session. */
+export interface CreateSessionRequest extends CreateSessionOptions {
+  name: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
 export type CreateSession = Asset & {
   uploadUrl: string;
   uploadExpiresAt: string;
@@ -34,6 +41,19 @@ export type CreateSession = Asset & {
   /** Recommended maximum simultaneous part uploads. */
   maxConcurrency?: number;
 };
+
+/**
+ * The safe subset of an upload session to return from your server to a
+ * browser. It contains no Portabyte API key or asset delivery URL.
+ */
+export interface BrowserUploadSession {
+  assetId: string;
+  uploadUrl: string;
+  uploadExpiresAt: string;
+  uploadMode: 'single' | 'multipart';
+  partSize?: number;
+  maxConcurrency?: number;
+}
 
 export interface MultipartPart {
   partNumber: number;

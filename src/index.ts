@@ -4,8 +4,10 @@ import { PortabyteError } from './errors';
 import type {
   Asset,
   AssetDeliveryURL,
+  BrowserUploadSession,
   CreateSession,
   CreateSessionOptions,
+  CreateSessionRequest,
   ListAssetsResult,
   MultipartPart,
   MultipartUploadOptions,
@@ -14,7 +16,7 @@ import type {
   UploadRequest,
 } from './types';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.0.1';
 
 export interface PortabyteOptions {
   apiKey: string;
@@ -59,8 +61,10 @@ export { PortabyteError };
 export type {
   Asset,
   AssetDeliveryURL,
+  BrowserUploadSession,
   CreateSession,
   CreateSessionOptions,
+  CreateSessionRequest,
   ListAssetsResult,
   MultipartPart,
   MultipartUploadOptions,
