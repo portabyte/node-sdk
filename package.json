@@ -3,6 +3,14 @@
   "version": "0.0.1",
   "description": "Official Node.js SDK for Portabyte file infrastructure.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/portabyte/node-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/portabyte/node-sdk/issues"
+  },
+  "homepage": "https://github.com/portabyte/node-sdk#readme",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
