@@ -17,31 +17,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # pnpm 11 requires Node 22.13+, so use pnpm 10 when checking the
-          # SDK's supported Node 18 and 20 runtimes.
-          - node: 18
-            pnpm: 10
-            lint: false
-          - node: 20
-            pnpm: 10
-            lint: true
-          - node: 22
-            pnpm: 11.9.0
-            lint: true
+        node: [18, 20, 22]
     steps:
       - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
+      # pnpm/setup installs pnpm's standalone executable, so the pnpm 11
+      # pinned in package.json works even while this job tests Node 18 or 20.
+      - uses: pnpm/setup@v2
         with:
-          version: ${{ matrix.pnpm }}
+          install: false
+          cache: true
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
-          cache: pnpm
       - run: pnpm install --frozen-lockfile
       # ESLint 10 no longer supports Node 18. The runtime still is covered by
       # the tests, typecheck, build, and package validation below.
-      - if: matrix.lint
+      - if: matrix.node != 18
         run: pnpm run lint
       - run: pnpm run test
       - run: pnpm run typecheck
