@@ -16,11 +16,10 @@ import type {
   UploadRequest,
 } from './types';
 
-export const VERSION = '0.0.1';
+export const VERSION = '0.0.3';
 
 export interface PortabyteOptions {
   apiKey: string;
-  baseUrl?: string;
   // idempotent requests only; mutating requests never retry
   maxRetries?: number;
   timeoutMs?: number;
@@ -46,7 +45,7 @@ export class Portabyte {
       );
     }
     const http = new HttpClient({
-      baseUrl: (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, ''),
+      baseUrl: DEFAULT_BASE_URL,
       apiKey: options.apiKey,
       fetchImpl: options.fetch ?? fetch,
       maxRetries: options.maxRetries ?? 2,

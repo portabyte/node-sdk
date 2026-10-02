@@ -98,7 +98,6 @@ try {
 | `apiKey` | Server API key scoped to a project | Required |
 | `maxRetries` | Retries for safe requests | `2` |
 | `timeoutMs` | Per-request timeout in milliseconds (`0` disables it) | `30000` |
-| `baseUrl` | Override the API endpoint for local development or tests | `https://api.portabyte.dev` |
 | `fetch` | Supply a different Fetch implementation | Runtime `fetch` |
 
 The SDK retries reads and byte transfers on network failures, `429`, and `5xx`. It does not retry state-changing API requests.
@@ -112,6 +111,7 @@ Use it on a trusted server to upload and manage files, prepare direct browser up
 - [Node.js SDK guide](https://portabyte.dev/docs/getting-started/node-sdk)
 - [REST API reference](https://portabyte.dev/docs/api-reference)
 - [Public and private files](https://portabyte.dev/docs/upload-delivery/public-and-private-files)
+- [Changelog](./CHANGELOG.md)
 
 ## Development
 

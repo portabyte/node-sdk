@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { Portabyte, VERSION } from './index';
 import { makeFetch } from './test/helpers/fetch';
 
@@ -9,7 +10,6 @@ const neverFetch: typeof fetch = () =>
 function client(fetchImpl: typeof fetch, overrides = {}) {
   return new Portabyte({
     apiKey: 'pbt_sk_live_test',
-    baseUrl: 'https://api.test',
     fetch: fetchImpl,
     ...overrides,
   });
@@ -18,6 +18,11 @@ function client(fetchImpl: typeof fetch, overrides = {}) {
 describe('Portabyte', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('keeps the SDK version header aligned with package.json', () => {
+    const metadata: unknown = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    expect(metadata).toMatchObject({ version: VERSION });
   });
 
   it('when the api key lacks the pbt_sk_live_ prefix, then construction throws', () => {
@@ -39,7 +44,6 @@ describe('Portabyte', () => {
 
     const portabyte = new Portabyte({
       apiKey: 'pbt_sk_live_test',
-      baseUrl: 'https://api.test',
     });
     await portabyte.files.list();
 
@@ -75,20 +79,19 @@ describe('Portabyte', () => {
     );
   });
 
-  it('when the base url has a trailing slash, then it is trimmed', async () => {
+  it('uses the built-in API endpoint', async () => {
     const { fetchImpl, requests } = makeFetch([
       {
-        match: (r) => r.url === 'https://api.test/v1/assets',
+        match: (r) => r.url === 'https://api.portabyte.dev/v1/assets',
         status: 200,
         body: { records: [] },
       },
     ]);
     await new Portabyte({
       apiKey: 'pbt_sk_live_test',
-      baseUrl: 'https://api.test/',
       fetch: fetchImpl,
     }).files.list();
-    expect(requests[0]?.url).toBe('https://api.test/v1/assets');
+    expect(requests[0]?.url).toBe('https://api.portabyte.dev/v1/assets');
   });
 
   it('when maxRetries is zero, then idempotent failures surface immediately', async () => {

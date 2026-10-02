@@ -7,7 +7,6 @@ const PROJECT = '01KZYQV7S4PNY0JV6FHZ6M2GPX';
 function client(fetchImpl: typeof fetch) {
   return new Portabyte({
     apiKey: 'pbt_sk_live_test',
-    baseUrl: 'https://api.test',
     fetch: fetchImpl,
   });
 }
@@ -30,6 +29,20 @@ const session = {
 };
 
 describe('upload', () => {
+  it('rejects an incomplete upload session before sending file bytes', async () => {
+    const { fetchImpl, requests } = makeFetch([
+      {
+        match: (r) => r.method === 'POST' && r.url.endsWith('/assets'),
+        status: 201,
+        body: { id: asset.id, uploadMode: 'single' },
+      },
+    ]);
+    await expect(client(fetchImpl).files.upload({
+      file: new Uint8Array([1]), name: 'a.bin', contentType: 'application/octet-stream',
+    })).rejects.toMatchObject({ code: 'invalid_response' });
+    expect(requests).toHaveLength(1);
+  });
+
   it('when preparing a browser upload, then it returns only the browser-safe session fields', async () => {
     const { fetchImpl, requests } = makeFetch([
       {
@@ -282,6 +295,20 @@ describe('url', () => {
     const url = await client(fetchImpl).files.url(asset.id);
     expect(url.public).toBe(false);
     expect(url.url).toContain('/s/');
+  });
+});
+
+describe('asset IDs', () => {
+  it('encodes an ID as one URL segment', async () => {
+    const { fetchImpl, requests } = makeFetch([
+      {
+        match: (r) => r.url.endsWith('/assets/a%2Fb'),
+        status: 200,
+        body: asset,
+      },
+    ]);
+    await client(fetchImpl).files.get('a/b');
+    expect(requests[0]?.url).toBe('https://api.portabyte.dev/v1/assets/a%2Fb');
   });
 });
 

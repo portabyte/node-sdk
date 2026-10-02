@@ -117,6 +117,7 @@ export class HttpClient {
     try {
       return await this.options.fetchImpl(url, {
         ...init,
+        redirect: 'error',
         signal:
           this.options.timeoutMs > 0
             ? AbortSignal.timeout(this.options.timeoutMs)

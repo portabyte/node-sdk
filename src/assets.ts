@@ -32,11 +32,18 @@ export class FilesAPI {
       ...(input.visibility !== undefined && { visibility: input.visibility }),
       ...(input.corsOrigin !== undefined && { corsOrigin: input.corsOrigin }),
     };
-    return this.http.request<CreateSession>({
+    const session = await this.http.request<CreateSession>({
       method: 'POST',
       path: this.path('assets'),
       body,
     });
+    if (
+      !session || !session.id || !session.uploadUrl || !session.uploadExpiresAt ||
+      (session.uploadMode !== 'single' && session.uploadMode !== 'multipart')
+    ) {
+      throw new PortabyteError('Portabyte returned an invalid upload session.', 0, 'invalid_response');
+    }
+    return session;
   }
 
   /**
@@ -67,7 +74,7 @@ export class FilesAPI {
   async confirm(assetID: string): Promise<Asset> {
     return this.http.request<Asset>({
       method: 'POST',
-      path: this.path(`assets/${assetID}/uploaded`),
+      path: this.path(`assets/${encodeURIComponent(assetID)}/uploaded`),
     });
   }
 
@@ -136,14 +143,14 @@ export class FilesAPI {
   async get(assetID: string): Promise<Asset> {
     return this.http.request<Asset>({
       method: 'GET',
-      path: this.path(`assets/${assetID}`),
+      path: this.path(`assets/${encodeURIComponent(assetID)}`),
     });
   }
 
   async remove(assetID: string): Promise<void> {
     await this.http.request<void>({
       method: 'DELETE',
-      path: this.path(`assets/${assetID}`),
+      path: this.path(`assets/${encodeURIComponent(assetID)}`),
     });
   }
 
@@ -159,7 +166,7 @@ export class FilesAPI {
     if (session.uploadMode === 'multipart' && state?.uploadId) {
       await this.http
         .uploadJSON(
-          `${session.uploadUrl}/multipart/${state.uploadId}`,
+          `${session.uploadUrl}/multipart/${encodeURIComponent(state.uploadId)}`,
           'DELETE',
           undefined,
           false,
@@ -176,7 +183,7 @@ export class FilesAPI {
   async url(assetID: string): Promise<AssetDeliveryURL> {
     return this.http.request<AssetDeliveryURL>({
       method: 'GET',
-      path: this.path(`assets/${assetID}/url`),
+      path: this.path(`assets/${encodeURIComponent(assetID)}/url`),
     });
   }
 
@@ -224,7 +231,17 @@ export class FilesAPI {
       state.uploadId = started.uploadId;
       await options.onStateChange?.({ ...state, parts: [...state.parts] });
     }
+    const uploadId = state.uploadId;
+    if (!uploadId) {
+      throw new PortabyteError('Upload gateway returned an invalid upload ID.', 0, 'invalid_response');
+    }
     const partCount = Math.ceil(session.sizeBytes / session.partSize);
+    if (state.parts.some((part) =>
+      !Number.isSafeInteger(part.partNumber) || part.partNumber < 1 ||
+      part.partNumber > partCount || typeof part.etag !== 'string' || !part.etag
+    )) {
+      throw new PortabyteError('Multipart state contains an invalid part.', 0, 'invalid_argument');
+    }
     const completed = new Map(
       state.parts.map((part) => [part.partNumber, part]),
     );
@@ -242,10 +259,17 @@ export class FilesAPI {
         const start = (partNumber - 1) * session.partSize!;
         const end = Math.min(start + session.partSize!, session.sizeBytes);
         const part = await this.http.putBytesJSON<MultipartPart>(
-          `${session.uploadUrl}/multipart/${state.uploadId}/parts/${partNumber}`,
+          `${session.uploadUrl}/multipart/${encodeURIComponent(uploadId)}/parts/${partNumber}`,
           contentType,
           sliceBody(body, start, end),
         );
+        if (part.partNumber !== partNumber || typeof part.etag !== 'string' || !part.etag) {
+          throw new PortabyteError(
+            'Upload gateway returned an invalid part.',
+            0,
+            'invalid_response',
+          );
+        }
         completed.set(part.partNumber, part);
         state.parts = [...completed.values()].sort(
           (left, right) => left.partNumber - right.partNumber,
@@ -256,8 +280,11 @@ export class FilesAPI {
     await Promise.all(
       Array.from({ length: Math.min(concurrency, partCount) }, uploadNext),
     );
+    state.parts = [...completed.values()].sort(
+      (left, right) => left.partNumber - right.partNumber,
+    );
     await this.http.uploadJSON(
-      `${session.uploadUrl}/multipart/${state.uploadId}/complete`,
+      `${session.uploadUrl}/multipart/${encodeURIComponent(uploadId)}/complete`,
       'POST',
       { parts: state.parts },
       true,

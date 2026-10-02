@@ -1,6 +1,6 @@
 {
   "name": "@portabyte/node",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Official Node.js SDK for Portabyte file infrastructure.",
   "license": "MIT",
   "repository": {
@@ -23,7 +23,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "assets",
+    "CHANGELOG.md"
   ],
   "publishConfig": {
     "access": "public"
