@@ -46,6 +46,21 @@ describe('Portabyte', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it('uses the Portabyte API endpoint with only a project key configured', async () => {
+    const { fetchImpl, requests } = makeFetch([
+      {
+        match: (r) => r.url === 'https://api.portabyte.dev/v1/assets',
+        status: 200,
+        body: { records: [] },
+      },
+    ]);
+    await new Portabyte({
+      apiKey: 'pbt_sk_live_test',
+      fetch: fetchImpl,
+    }).files.list();
+    expect(requests[0]?.url).toBe('https://api.portabyte.dev/v1/assets');
+  });
+
   it('when a request is made, then the SDK version header is sent', async () => {
     const { fetchImpl, requests } = makeFetch([
       {
