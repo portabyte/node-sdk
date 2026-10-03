@@ -35,16 +35,13 @@ export PORTABYTE_API_KEY="pbt_sk_live_your_key_here"
 Save this as `quickstart.mjs`:
 
 ```js
-import { readFile } from 'node:fs/promises';
 import { Portabyte } from '@portabyte/node';
 
 const portabyte = new Portabyte({
   apiKey: process.env.PORTABYTE_API_KEY,
 });
 
-const asset = await portabyte.files.upload({
-  file: await readFile('./summary.pdf'),
-  name: 'summary.pdf',
+const asset = await portabyte.files.uploadFile('./summary.pdf', {
   contentType: 'application/pdf',
   visibility: 'public',
 });
@@ -69,7 +66,7 @@ await portabyte.files.remove(assetId);
 
 Public files have stable delivery URLs. Private files receive short-lived signed URLs; request a new one when needed. Set `path` during upload to replace the current file at an application-owned path.
 
-The SDK automatically uses multipart upload for large files. To recover from an interrupted upload, use `files.create()` and `files.resume()` with persisted multipart state. See the [Node.js SDK guide](https://portabyte.dev/docs/getting-started/node-sdk) for that flow.
+The SDK automatically uses multipart upload for large files. `uploadFile()` reads one part at a time rather than buffering a large file. For a `Blob` or byte array, use `files.upload({ file, name, contentType })`. To recover from an interrupted local file upload, persist the session from `files.create()` and the multipart state, then call `files.resumeFile(session, filePath, { state, onStateChange })`. See the [Node.js SDK guide](https://portabyte.dev/docs/getting-started/node-sdk) for that flow.
 
 For uploads directly from a browser, call `files.prepareBrowserUpload()` and `files.confirm()` on your server. Send only the browser-safe session to the browser; never send the API key. See [Browser uploads](https://portabyte.dev/docs/upload-delivery/browser-uploads).
 
@@ -98,7 +95,6 @@ try {
 | `apiKey` | Server API key scoped to a project | Required |
 | `maxRetries` | Retries for safe requests | `2` |
 | `timeoutMs` | Per-request timeout in milliseconds (`0` disables it) | `30000` |
-| `baseUrl` | Override the API endpoint for local development or tests | `https://api.portabyte.dev` |
 | `fetch` | Supply a different Fetch implementation | Runtime `fetch` |
 
 The SDK retries reads and byte transfers on network failures, `429`, and `5xx`. It does not retry state-changing API requests.
@@ -112,11 +108,13 @@ Use it on a trusted server to upload and manage files, prepare direct browser up
 - [Node.js SDK guide](https://portabyte.dev/docs/getting-started/node-sdk)
 - [REST API reference](https://portabyte.dev/docs/api-reference)
 - [Public and private files](https://portabyte.dev/docs/upload-delivery/public-and-private-files)
+- [Changelog](./CHANGELOG.md)
 
 ## Development
 
 ```sh
 pnpm install
+pnpm run format
 pnpm run verify
 pnpm run build
 ```

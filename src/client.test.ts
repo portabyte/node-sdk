@@ -148,13 +148,16 @@ describe('HttpClient responses', () => {
 
   it('when a timeout is configured, then the request carries an abort signal', async () => {
     let seenSignal: AbortSignal | undefined;
+    let seenRedirect: RequestRedirect | undefined;
     const fetchImpl: typeof fetch = async (_url, init) => {
       seenSignal = init?.signal ?? undefined;
+      seenRedirect = init?.redirect;
       return new Response(null, { status: 204 });
     };
 
     await http(fetchImpl).request({ method: 'GET', path: '/x' });
     expect(seenSignal).toBeInstanceOf(AbortSignal);
+    expect(seenRedirect).toBe('error');
   });
 });
 
