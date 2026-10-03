@@ -1,3 +1,6 @@
+import { open } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { HttpClient } from './client';
 import { PortabyteError } from './errors';
 import type {
@@ -12,7 +15,13 @@ import type {
   MultipartUploadState,
   ResumeUploadRequest,
   UploadRequest,
+  UploadFileOptions,
 } from './types';
+
+interface ByteSource {
+  size: number;
+  read(start: number, end: number): Promise<Blob | Uint8Array>;
+}
 
 export interface ListOptions {
   cursor?: string;
@@ -38,10 +47,17 @@ export class FilesAPI {
       body,
     });
     if (
-      !session || !session.id || !session.uploadUrl || !session.uploadExpiresAt ||
+      !session ||
+      !session.id ||
+      !session.uploadUrl ||
+      !session.uploadExpiresAt ||
       (session.uploadMode !== 'single' && session.uploadMode !== 'multipart')
     ) {
-      throw new PortabyteError('Portabyte returned an invalid upload session.', 0, 'invalid_response');
+      throw new PortabyteError(
+        'Portabyte returned an invalid upload session.',
+        0,
+        'invalid_response',
+      );
     }
     return session;
   }
@@ -84,23 +100,59 @@ export class FilesAPI {
     const { file, multipart } = request;
     const createOptions = {
       ...(request.path !== undefined && { path: request.path }),
-      ...(request.visibility !== undefined && { visibility: request.visibility }),
-      ...(request.corsOrigin !== undefined && { corsOrigin: request.corsOrigin }),
+      ...(request.visibility !== undefined && {
+        visibility: request.visibility,
+      }),
+      ...(request.corsOrigin !== undefined && {
+        corsOrigin: request.corsOrigin,
+      }),
     };
     const session = await this.create({ ...described, ...createOptions });
     await this.transfer(
       session,
-      file,
+      byteSource(file),
       described.contentType,
       multipart,
     );
+    return this.confirmNewUpload(session.id);
+  }
+
+  /** Uploads a local path; multipart files are read one part at a time. */
+  async uploadFile(
+    filePath: string,
+    options: UploadFileOptions,
+  ): Promise<Asset> {
+    if (!options.contentType) {
+      throw new PortabyteError(
+        'A content type is required.',
+        0,
+        'invalid_argument',
+      );
+    }
+    const handle = await open(filePath, 'r');
     try {
-      return await this.confirm(session.id);
-    } catch (error) {
-      if (error instanceof PortabyteError && error.status !== 0) {
-        await this.remove(session.id).catch(() => undefined);
-      }
-      throw error;
+      const sizeBytes = (await handle.stat()).size;
+      const session = await this.create({
+        name: options.name ?? basename(filePath),
+        contentType: options.contentType,
+        sizeBytes,
+        ...(options.path !== undefined && { path: options.path }),
+        ...(options.visibility !== undefined && {
+          visibility: options.visibility,
+        }),
+        ...(options.corsOrigin !== undefined && {
+          corsOrigin: options.corsOrigin,
+        }),
+      });
+      await this.transfer(
+        session,
+        fileSource(handle, sizeBytes),
+        options.contentType,
+        options.multipart,
+      );
+      return await this.confirmNewUpload(session.id);
+    } finally {
+      await handle.close();
     }
   }
 
@@ -125,8 +177,41 @@ export class FilesAPI {
         'invalid_argument',
       );
     }
-    await this.transfer(session, request.file, contentType, request);
+    await this.transfer(
+      session,
+      byteSource(request.file),
+      contentType,
+      request,
+    );
     return this.confirm(session.id);
+  }
+
+  /** Continue a saved upload session using the same local path. */
+  async resumeFile(
+    session: CreateSession,
+    filePath: string,
+    options: MultipartUploadOptions = {},
+  ): Promise<Asset> {
+    const handle = await open(filePath, 'r');
+    try {
+      const sizeBytes = (await handle.stat()).size;
+      if (sizeBytes !== session.sizeBytes) {
+        throw new PortabyteError(
+          'The selected file does not match this upload session.',
+          0,
+          'invalid_argument',
+        );
+      }
+      await this.transfer(
+        session,
+        fileSource(handle, sizeBytes),
+        session.contentType,
+        options,
+      );
+      return await this.confirm(session.id);
+    } finally {
+      await handle.close();
+    }
   }
 
   async list(options: ListOptions = {}): Promise<ListAssetsResult> {
@@ -191,22 +276,37 @@ export class FilesAPI {
     return `/v1/${suffix}`;
   }
 
+  private async confirmNewUpload(assetID: string): Promise<Asset> {
+    try {
+      return await this.confirm(assetID);
+    } catch (error) {
+      if (error instanceof PortabyteError && error.status !== 0) {
+        await this.remove(assetID).catch(() => undefined);
+      }
+      throw error;
+    }
+  }
+
   private async transfer(
     session: CreateSession,
-    body: Blob | Uint8Array,
+    source: ByteSource,
     contentType: string,
     options?: MultipartUploadOptions,
   ): Promise<void> {
     if (session.uploadMode === 'single') {
-      await this.http.putBytes(session.uploadUrl, contentType, body);
+      await this.http.putBytes(
+        session.uploadUrl,
+        contentType,
+        await source.read(0, source.size),
+      );
       return;
     }
-    await this.uploadMultipart(session, body, contentType, options);
+    await this.uploadMultipart(session, source, contentType, options);
   }
 
   private async uploadMultipart(
     session: CreateSession,
-    body: Blob | Uint8Array,
+    source: ByteSource,
     contentType: string,
     options: MultipartUploadOptions = {},
   ): Promise<void> {
@@ -233,14 +333,28 @@ export class FilesAPI {
     }
     const uploadId = state.uploadId;
     if (!uploadId) {
-      throw new PortabyteError('Upload gateway returned an invalid upload ID.', 0, 'invalid_response');
+      throw new PortabyteError(
+        'Upload gateway returned an invalid upload ID.',
+        0,
+        'invalid_response',
+      );
     }
     const partCount = Math.ceil(session.sizeBytes / session.partSize);
-    if (state.parts.some((part) =>
-      !Number.isSafeInteger(part.partNumber) || part.partNumber < 1 ||
-      part.partNumber > partCount || typeof part.etag !== 'string' || !part.etag
-    )) {
-      throw new PortabyteError('Multipart state contains an invalid part.', 0, 'invalid_argument');
+    if (
+      state.parts.some(
+        (part) =>
+          !Number.isSafeInteger(part.partNumber) ||
+          part.partNumber < 1 ||
+          part.partNumber > partCount ||
+          typeof part.etag !== 'string' ||
+          !part.etag,
+      )
+    ) {
+      throw new PortabyteError(
+        'Multipart state contains an invalid part.',
+        0,
+        'invalid_argument',
+      );
     }
     const completed = new Map(
       state.parts.map((part) => [part.partNumber, part]),
@@ -261,9 +375,13 @@ export class FilesAPI {
         const part = await this.http.putBytesJSON<MultipartPart>(
           `${session.uploadUrl}/multipart/${encodeURIComponent(uploadId)}/parts/${partNumber}`,
           contentType,
-          sliceBody(body, start, end),
+          await source.read(start, end),
         );
-        if (part.partNumber !== partNumber || typeof part.etag !== 'string' || !part.etag) {
+        if (
+          part.partNumber !== partNumber ||
+          typeof part.etag !== 'string' ||
+          !part.etag
+        ) {
           throw new PortabyteError(
             'Upload gateway returned an invalid part.',
             0,
@@ -292,6 +410,43 @@ export class FilesAPI {
   }
 }
 
+function byteSource(body: Blob | Uint8Array): ByteSource {
+  return {
+    size: fileSize(body),
+    async read(start, end) {
+      return sliceBody(body, start, end);
+    },
+  };
+}
+
+function fileSource(handle: FileHandle, size: number): ByteSource {
+  return {
+    size,
+    async read(start, end) {
+      const length = end - start;
+      const bytes = Buffer.allocUnsafe(length);
+      let offset = 0;
+      while (offset < length) {
+        const result = await handle.read(
+          bytes,
+          offset,
+          length - offset,
+          start + offset,
+        );
+        if (result.bytesRead === 0) {
+          throw new PortabyteError(
+            'The selected file changed during upload.',
+            0,
+            'invalid_upload',
+          );
+        }
+        offset += result.bytesRead;
+      }
+      return bytes;
+    },
+  };
+}
+
 function describeUpload(request: UploadRequest): {
   name: string;
   contentType: string;
@@ -299,7 +454,8 @@ function describeUpload(request: UploadRequest): {
 } {
   const filename = request.name ?? fileName(request.file);
   const mimeType =
-    request.contentType ?? (request.file instanceof Blob ? request.file.type : '');
+    request.contentType ??
+    (request.file instanceof Blob ? request.file.type : '');
   if (!filename) {
     throw new PortabyteError(
       'A file name is required when uploading a Blob or bytes.',
@@ -318,7 +474,9 @@ function describeUpload(request: UploadRequest): {
     name: filename,
     contentType: mimeType,
     sizeBytes:
-      request.file instanceof Blob ? request.file.size : request.file.byteLength,
+      request.file instanceof Blob
+        ? request.file.size
+        : request.file.byteLength,
   };
 }
 

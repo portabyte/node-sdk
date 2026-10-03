@@ -14,6 +14,7 @@ import type {
   MultipartUploadState,
   ResumeUploadRequest,
   UploadRequest,
+  UploadFileOptions,
 } from './types';
 
 export const VERSION = '0.0.3';
@@ -70,4 +71,5 @@ export type {
   MultipartUploadState,
   ResumeUploadRequest,
   UploadRequest,
+  UploadFileOptions,
 };

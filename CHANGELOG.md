@@ -7,6 +7,7 @@
 - Encode asset IDs as URL path segments and reject HTTP redirects.
 - Validate multipart part responses and persisted state before completion.
 - Include logo assets in the npm package.
+- Add `uploadFile()` and `resumeFile()` to read local multipart uploads in chunks.
 
 ## 0.0.2
 

@@ -88,6 +88,14 @@ export interface UploadRequest extends CreateSessionOptions {
   multipart?: MultipartUploadOptions;
 }
 
+/** Options for uploading a local path without buffering the full file. */
+export interface UploadFileOptions extends CreateSessionOptions {
+  /** Defaults to the path's basename. */
+  name?: string;
+  contentType: string;
+  multipart?: MultipartUploadOptions;
+}
+
 /** Input for resuming a previously-created multipart upload. */
 export interface ResumeUploadRequest extends MultipartUploadOptions {
   file: Blob | Uint8Array;

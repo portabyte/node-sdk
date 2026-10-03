@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Portabyte } from './index';
 import { makeFetch } from './test/helpers/fetch';
 
@@ -37,9 +40,13 @@ describe('upload', () => {
         body: { id: asset.id, uploadMode: 'single' },
       },
     ]);
-    await expect(client(fetchImpl).files.upload({
-      file: new Uint8Array([1]), name: 'a.bin', contentType: 'application/octet-stream',
-    })).rejects.toMatchObject({ code: 'invalid_response' });
+    await expect(
+      client(fetchImpl).files.upload({
+        file: new Uint8Array([1]),
+        name: 'a.bin',
+        contentType: 'application/octet-stream',
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
     expect(requests).toHaveLength(1);
   });
 
@@ -73,13 +80,16 @@ describe('upload', () => {
   it('when confirming a browser upload, then it returns the live asset', async () => {
     const { fetchImpl, requests } = makeFetch([
       {
-        match: (r) => r.method === 'POST' && r.url.endsWith(`/${asset.id}/uploaded`),
+        match: (r) =>
+          r.method === 'POST' && r.url.endsWith(`/${asset.id}/uploaded`),
         status: 200,
         body: asset,
       },
     ]);
 
-    await expect(client(fetchImpl).files.confirm(asset.id)).resolves.toEqual(asset);
+    await expect(client(fetchImpl).files.confirm(asset.id)).resolves.toEqual(
+      asset,
+    );
     expect(requests).toHaveLength(1);
   });
 
@@ -95,7 +105,8 @@ describe('upload', () => {
         status: 201,
       },
       {
-        match: (r) => r.method === 'POST' && r.url.endsWith(`/${asset.id}/uploaded`),
+        match: (r) =>
+          r.method === 'POST' && r.url.endsWith(`/${asset.id}/uploaded`),
         status: 200,
         body: asset,
       },
@@ -276,6 +287,162 @@ describe('upload', () => {
       client(fetchImpl).files.upload({ file: new Blob(['x']), name: 'x.txt' }),
     ).rejects.toThrow(/content type/);
     expect(requests.length).toBe(0);
+  });
+});
+
+describe('local file paths', () => {
+  it('uploads a local path end to end', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'portabyte-'));
+    try {
+      const filePath = join(directory, 'sample.txt');
+      await writeFile(filePath, 'hello');
+      const pathSession = {
+        ...session,
+        name: 'sample.txt',
+        contentType: 'text/plain',
+        sizeBytes: 5,
+      };
+      const { fetchImpl, requests } = makeFetch([
+        {
+          match: (r) => r.method === 'POST' && r.url.endsWith('/assets'),
+          status: 201,
+          body: pathSession,
+        },
+        {
+          match: (r) => r.method === 'PUT' && r.url === session.uploadUrl,
+          status: 201,
+        },
+        {
+          match: (r) =>
+            r.method === 'POST' && r.url.endsWith(`/${asset.id}/uploaded`),
+          status: 200,
+          body: asset,
+        },
+      ]);
+      await client(fetchImpl).files.uploadFile(filePath, {
+        contentType: 'text/plain',
+      });
+      expect(JSON.parse(String(requests[0]?.body))).toMatchObject({
+        name: 'sample.txt',
+        sizeBytes: 5,
+      });
+      expect(Buffer.from(requests[1]?.body as Uint8Array).toString()).toBe(
+        'hello',
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('reads a large local upload in multipart chunks', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'portabyte-'));
+    try {
+      const partSize = 5 * 1024 * 1024;
+      const filePath = join(directory, 'video.bin');
+      await writeFile(
+        filePath,
+        Buffer.concat([Buffer.alloc(partSize, 1), Buffer.from('z')]),
+      );
+      const multipartSession = {
+        ...session,
+        name: 'video.bin',
+        contentType: 'application/octet-stream',
+        sizeBytes: partSize + 1,
+        uploadMode: 'multipart' as const,
+        partSize,
+      };
+      const { fetchImpl, requests } = makeFetch([
+        {
+          match: (r) => r.method === 'POST' && r.url.endsWith('/assets'),
+          status: 201,
+          body: multipartSession,
+        },
+        {
+          match: (r) => r.method === 'POST' && r.url.endsWith('/multipart'),
+          status: 200,
+          body: { uploadId: 'upload-1' },
+        },
+        {
+          match: (r) => r.method === 'PUT' && r.url.endsWith('/parts/1'),
+          status: 200,
+          body: { partNumber: 1, etag: 'part-1' },
+        },
+        {
+          match: (r) => r.method === 'PUT' && r.url.endsWith('/parts/2'),
+          status: 200,
+          body: { partNumber: 2, etag: 'part-2' },
+        },
+        {
+          match: (r) => r.method === 'POST' && r.url.endsWith('/complete'),
+          status: 201,
+          body: {},
+        },
+        {
+          match: (r) =>
+            r.method === 'POST' && r.url.endsWith(`/${asset.id}/uploaded`),
+          status: 200,
+          body: asset,
+        },
+      ]);
+      await client(fetchImpl).files.uploadFile(filePath, {
+        contentType: 'application/octet-stream',
+        multipart: { concurrency: 1 },
+      });
+      expect((requests[2]?.body as Uint8Array).byteLength).toBe(partSize);
+      expect(Buffer.from(requests[3]?.body as Uint8Array).toString()).toBe('z');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('resumes a local multipart file without re-uploading saved parts', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'portabyte-'));
+    try {
+      const partSize = 5 * 1024 * 1024;
+      const filePath = join(directory, 'sample.bin');
+      await writeFile(
+        filePath,
+        Buffer.concat([Buffer.alloc(partSize, 1), Buffer.from('z')]),
+      );
+      const multipartSession = {
+        ...session,
+        contentType: 'application/octet-stream',
+        sizeBytes: partSize + 1,
+        uploadMode: 'multipart' as const,
+        partSize,
+      };
+      const { fetchImpl, requests } = makeFetch([
+        {
+          match: (r) => r.method === 'PUT' && r.url.endsWith('/parts/2'),
+          status: 200,
+          body: { partNumber: 2, etag: 'part-2' },
+        },
+        {
+          match: (r) => r.method === 'POST' && r.url.endsWith('/complete'),
+          status: 201,
+          body: {},
+        },
+        {
+          match: (r) =>
+            r.method === 'POST' && r.url.endsWith(`/${asset.id}/uploaded`),
+          status: 200,
+          body: asset,
+        },
+      ]);
+      await client(fetchImpl).files.resumeFile(multipartSession, filePath, {
+        state: {
+          uploadId: 'upload-1',
+          parts: [{ partNumber: 1, etag: 'part-1' }],
+        },
+      });
+      expect(Buffer.from(requests[0]?.body as Uint8Array).toString()).toBe('z');
+      expect(JSON.parse(String(requests[1]?.body)).parts).toEqual([
+        { partNumber: 1, etag: 'part-1' },
+        { partNumber: 2, etag: 'part-2' },
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });
 

@@ -35,16 +35,13 @@ export PORTABYTE_API_KEY="pbt_sk_live_your_key_here"
 Save this as `quickstart.mjs`:
 
 ```js
-import { readFile } from 'node:fs/promises';
 import { Portabyte } from '@portabyte/node';
 
 const portabyte = new Portabyte({
   apiKey: process.env.PORTABYTE_API_KEY,
 });
 
-const asset = await portabyte.files.upload({
-  file: await readFile('./summary.pdf'),
-  name: 'summary.pdf',
+const asset = await portabyte.files.uploadFile('./summary.pdf', {
   contentType: 'application/pdf',
   visibility: 'public',
 });
@@ -69,7 +66,7 @@ await portabyte.files.remove(assetId);
 
 Public files have stable delivery URLs. Private files receive short-lived signed URLs; request a new one when needed. Set `path` during upload to replace the current file at an application-owned path.
 
-The SDK automatically uses multipart upload for large files. To recover from an interrupted upload, use `files.create()` and `files.resume()` with persisted multipart state. See the [Node.js SDK guide](https://portabyte.dev/docs/getting-started/node-sdk) for that flow.
+The SDK automatically uses multipart upload for large files. `uploadFile()` reads one part at a time rather than buffering a large file. For a `Blob` or byte array, use `files.upload({ file, name, contentType })`. To recover from an interrupted local file upload, persist the session from `files.create()` and the multipart state, then call `files.resumeFile(session, filePath, { state, onStateChange })`. See the [Node.js SDK guide](https://portabyte.dev/docs/getting-started/node-sdk) for that flow.
 
 For uploads directly from a browser, call `files.prepareBrowserUpload()` and `files.confirm()` on your server. Send only the browser-safe session to the browser; never send the API key. See [Browser uploads](https://portabyte.dev/docs/upload-delivery/browser-uploads).
 
