@@ -8,6 +8,7 @@
 - Validate multipart part responses and persisted state before completion.
 - Include logo assets in the npm package.
 - Add `uploadFile()` and `resumeFile()` to read local multipart uploads in chunks.
+- Enforce Prettier formatting in the SDK verification workflow.
 
 ## 0.0.2
 

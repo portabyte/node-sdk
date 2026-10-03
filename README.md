@@ -114,6 +114,7 @@ Use it on a trusted server to upload and manage files, prepare direct browser up
 
 ```sh
 pnpm install
+pnpm run format
 pnpm run verify
 pnpm run build
 ```

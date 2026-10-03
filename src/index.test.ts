@@ -21,7 +21,9 @@ describe('Portabyte', () => {
   });
 
   it('keeps the SDK version header aligned with package.json', () => {
-    const metadata: unknown = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    const metadata: unknown = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    );
     expect(metadata).toMatchObject({ version: VERSION });
   });
 

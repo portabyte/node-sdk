@@ -30,6 +30,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run format:check
       # ESLint 10 no longer supports Node 18. The runtime still is covered by
       # the tests, typecheck, build, and package validation below.
       - if: matrix.node != 18
