@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.0.3)
+## 0.0.3 - 2026-10-03
 
 - Keep the API endpoint internal to the SDK; construction only needs a project key.
 - Align the SDK request header with the package version.
