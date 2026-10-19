@@ -4,6 +4,7 @@ import { PortabyteError } from './errors';
 import type {
   Asset,
   AssetDeliveryURL,
+  AssetVisibility,
   BrowserUploadSession,
   CreateSession,
   CreateSessionOptions,
@@ -16,8 +17,9 @@ import type {
   UploadRequest,
   UploadFileOptions,
 } from './types';
+import type { ListOptions } from './assets';
 
-export const VERSION = '0.0.3';
+export const VERSION = '0.0.4';
 
 export interface PortabyteOptions {
   apiKey: string;
@@ -38,9 +40,33 @@ export class Portabyte {
   readonly files: FilesAPI;
 
   constructor(options: PortabyteOptions) {
-    if (!options.apiKey.startsWith('pbt_sk_live_')) {
+    if (
+      !options ||
+      typeof options.apiKey !== 'string' ||
+      !options.apiKey.startsWith('pbt_sk_live_')
+    ) {
       throw new PortabyteError(
         'apiKey must be a server API key starting with "pbt_sk_live_".',
+        0,
+        'invalid_argument',
+      );
+    }
+    if (
+      options.maxRetries !== undefined &&
+      (!Number.isSafeInteger(options.maxRetries) || options.maxRetries < 0)
+    ) {
+      throw new PortabyteError(
+        'maxRetries must be a non-negative integer.',
+        0,
+        'invalid_argument',
+      );
+    }
+    if (
+      options.timeoutMs !== undefined &&
+      (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 0)
+    ) {
+      throw new PortabyteError(
+        'timeoutMs must be a non-negative integer.',
         0,
         'invalid_argument',
       );
@@ -57,15 +83,17 @@ export class Portabyte {
   }
 }
 
-export { PortabyteError };
+export { FilesAPI, PortabyteError };
 export type {
   Asset,
   AssetDeliveryURL,
+  AssetVisibility,
   BrowserUploadSession,
   CreateSession,
   CreateSessionOptions,
   CreateSessionRequest,
   ListAssetsResult,
+  ListOptions,
   MultipartPart,
   MultipartUploadOptions,
   MultipartUploadState,

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { Portabyte, VERSION } from './index';
+import { FilesAPI, Portabyte, VERSION } from './index';
 import { makeFetch } from './test/helpers/fetch';
 
 // for tests that must never reach the network
@@ -35,6 +35,26 @@ describe('Portabyte', () => {
           fetch: neverFetch,
         }),
     ).toThrow(/pbt_sk_live_/);
+  });
+
+  it('exports the files client class from the package entrypoint', () => {
+    expect(client(neverFetch).files).toBeInstanceOf(FilesAPI);
+  });
+
+  it.each([
+    ['maxRetries', -1],
+    ['maxRetries', 1.5],
+    ['timeoutMs', -1],
+    ['timeoutMs', Number.POSITIVE_INFINITY],
+  ] as const)('rejects invalid %s values', (option, value) => {
+    expect(
+      () =>
+        new Portabyte({
+          apiKey: 'pbt_sk_live_test',
+          fetch: neverFetch,
+          [option]: value,
+        }),
+    ).toThrow(new RegExp(option));
   });
 
   it('when no fetch is injected, then the global fetch is used', async () => {

@@ -51,7 +51,17 @@ export class FilesAPI {
       !session.id ||
       !session.uploadUrl ||
       !session.uploadExpiresAt ||
-      (session.uploadMode !== 'single' && session.uploadMode !== 'multipart')
+      session.name !== input.name ||
+      session.contentType !== input.contentType ||
+      session.sizeBytes !== input.sizeBytes ||
+      (session.uploadMode !== 'single' && session.uploadMode !== 'multipart') ||
+      (session.uploadMode === 'multipart' &&
+        (!Number.isSafeInteger(session.partSize) ||
+          session.partSize! < 5 * 1024 * 1024 ||
+          session.partSize! > session.sizeBytes)) ||
+      (session.maxConcurrency !== undefined &&
+        (!Number.isSafeInteger(session.maxConcurrency) ||
+          session.maxConcurrency < 1))
     ) {
       throw new PortabyteError(
         'Portabyte returned an invalid upload session.',
@@ -317,9 +327,34 @@ export class FilesAPI {
         'invalid_upload',
       );
     }
+    const requestedConcurrency =
+      options.concurrency ?? session.maxConcurrency ?? 3;
+    if (
+      !Number.isSafeInteger(requestedConcurrency) ||
+      requestedConcurrency < 1
+    ) {
+      throw new PortabyteError(
+        options.concurrency === undefined
+          ? 'Multipart upload session has invalid concurrency.'
+          : 'Multipart concurrency must be a positive integer.',
+        0,
+        options.concurrency === undefined
+          ? 'invalid_response'
+          : 'invalid_argument',
+      );
+    }
     const state: MultipartUploadState = {
       uploadId: options.state?.uploadId,
       parts: [...(options.state?.parts ?? [])],
+    };
+    let pendingStateChange: Promise<void> = Promise.resolve();
+    const notifyStateChange = (): Promise<void> => {
+      if (!options.onStateChange) return Promise.resolve();
+      const snapshot = { ...state, parts: [...state.parts] };
+      pendingStateChange = pendingStateChange.then(async () => {
+        await options.onStateChange?.(snapshot);
+      });
+      return pendingStateChange;
     };
     if (!state.uploadId) {
       const started = await this.http.uploadJSON<{ uploadId: string }>(
@@ -329,7 +364,7 @@ export class FilesAPI {
         false,
       );
       state.uploadId = started.uploadId;
-      await options.onStateChange?.({ ...state, parts: [...state.parts] });
+      await notifyStateChange();
     }
     const uploadId = state.uploadId;
     if (!uploadId) {
@@ -340,16 +375,20 @@ export class FilesAPI {
       );
     }
     const partCount = Math.ceil(session.sizeBytes / session.partSize);
-    if (
-      state.parts.some(
-        (part) =>
-          !Number.isSafeInteger(part.partNumber) ||
-          part.partNumber < 1 ||
-          part.partNumber > partCount ||
-          typeof part.etag !== 'string' ||
-          !part.etag,
-      )
-    ) {
+    const savedPartNumbers = new Set<number>();
+    const invalidPart = state.parts.some((part) => {
+      const duplicate = savedPartNumbers.has(part.partNumber);
+      savedPartNumbers.add(part.partNumber);
+      return (
+        !Number.isSafeInteger(part.partNumber) ||
+        part.partNumber < 1 ||
+        part.partNumber > partCount ||
+        typeof part.etag !== 'string' ||
+        !part.etag ||
+        duplicate
+      );
+    });
+    if (invalidPart) {
       throw new PortabyteError(
         'Multipart state contains an invalid part.',
         0,
@@ -359,10 +398,7 @@ export class FilesAPI {
     const completed = new Map(
       state.parts.map((part) => [part.partNumber, part]),
     );
-    const concurrency = Math.max(
-      1,
-      Math.min(options.concurrency ?? session.maxConcurrency ?? 3, 3),
-    );
+    const concurrency = Math.min(requestedConcurrency, 3);
     let nextPart = 1;
     const uploadNext = async () => {
       for (;;) {
@@ -392,7 +428,7 @@ export class FilesAPI {
         state.parts = [...completed.values()].sort(
           (left, right) => left.partNumber - right.partNumber,
         );
-        await options.onStateChange?.({ ...state, parts: [...state.parts] });
+        await notifyStateChange();
       }
     };
     await Promise.all(

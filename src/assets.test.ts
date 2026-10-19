@@ -26,7 +26,7 @@ const asset = {
 
 const session = {
   ...asset,
-  uploadUrl: 'https://gateway.test/v1/uploads/tok',
+  uploadUrl: 'https://gateway.test/v1/tok',
   uploadExpiresAt: '2026-08-22T00:15:00Z',
   uploadMode: 'single' as const,
 };
@@ -45,6 +45,47 @@ describe('upload', () => {
         file: new Uint8Array([1]),
         name: 'a.bin',
         contentType: 'application/octet-stream',
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
+    expect(requests).toHaveLength(1);
+  });
+
+  it('rejects an upload session that does not match the requested file', async () => {
+    const { fetchImpl, requests } = makeFetch([
+      {
+        match: (r) => r.method === 'POST' && r.url.endsWith('/assets'),
+        status: 201,
+        body: { ...session, sizeBytes: 99 },
+      },
+    ]);
+    await expect(
+      client(fetchImpl).files.upload({
+        file: new Uint8Array([1, 2, 3]),
+        name: 'logo.png',
+        contentType: 'image/png',
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
+    expect(requests).toHaveLength(1);
+  });
+
+  it('rejects malformed multipart configuration in an upload session', async () => {
+    const { fetchImpl, requests } = makeFetch([
+      {
+        match: (r) => r.method === 'POST' && r.url.endsWith('/assets'),
+        status: 201,
+        body: {
+          ...session,
+          uploadMode: 'multipart',
+          partSize: 1,
+          maxConcurrency: 0,
+        },
+      },
+    ]);
+    await expect(
+      client(fetchImpl).files.prepareBrowserUpload({
+        name: 'logo.png',
+        contentType: 'image/png',
+        sizeBytes: 3,
       }),
     ).rejects.toMatchObject({ code: 'invalid_response' });
     expect(requests).toHaveLength(1);
@@ -135,10 +176,12 @@ describe('upload', () => {
     const partSize = 5 * 1024 * 1024;
     const multipartSession = {
       ...session,
+      name: 'video.mp4',
+      contentType: 'video/mp4',
       sizeBytes: partSize + 1,
       uploadMode: 'multipart' as const,
       partSize,
-      maxConcurrency: 1,
+      maxConcurrency: 2,
     };
     const { fetchImpl, requests } = makeFetch([
       {
@@ -173,10 +216,25 @@ describe('upload', () => {
       },
     ]);
 
+    let activeStateChanges = 0;
+    let maximumActiveStateChanges = 0;
+    const savedPartCounts: number[] = [];
     await client(fetchImpl).files.upload({
       file: new Uint8Array(partSize + 1),
       name: 'video.mp4',
       contentType: 'video/mp4',
+      multipart: {
+        async onStateChange(state) {
+          activeStateChanges += 1;
+          maximumActiveStateChanges = Math.max(
+            maximumActiveStateChanges,
+            activeStateChanges,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          savedPartCounts.push(state.parts.length);
+          activeStateChanges -= 1;
+        },
+      },
     });
 
     expect(requests).toHaveLength(6);
@@ -187,6 +245,66 @@ describe('upload', () => {
         { partNumber: 2, etag: 'part-2' },
       ],
     });
+    expect(maximumActiveStateChanges).toBe(1);
+    expect(savedPartCounts).toEqual([0, 1, 2]);
+  });
+
+  it.each([0, 1.5])(
+    'rejects invalid multipart concurrency %s before starting the transfer',
+    async (concurrency) => {
+      const partSize = 5 * 1024 * 1024;
+      const multipartSession = {
+        ...session,
+        name: 'video.mp4',
+        contentType: 'video/mp4',
+        sizeBytes: partSize + 1,
+        uploadMode: 'multipart' as const,
+        partSize,
+      };
+      const { fetchImpl, requests } = makeFetch([
+        {
+          match: (r) => r.method === 'POST' && r.url.endsWith('/assets'),
+          status: 201,
+          body: multipartSession,
+        },
+      ]);
+
+      await expect(
+        client(fetchImpl).files.upload({
+          file: new Uint8Array(partSize + 1),
+          name: 'video.mp4',
+          contentType: 'video/mp4',
+          multipart: { concurrency },
+        }),
+      ).rejects.toMatchObject({ code: 'invalid_argument' });
+      expect(requests).toHaveLength(1);
+    },
+  );
+
+  it('rejects duplicate persisted parts before resuming a transfer', async () => {
+    const partSize = 5 * 1024 * 1024;
+    const multipartSession = {
+      ...session,
+      sizeBytes: partSize + 1,
+      uploadMode: 'multipart' as const,
+      partSize,
+    };
+    const { fetchImpl, requests } = makeFetch([]);
+
+    await expect(
+      client(fetchImpl).files.resume(multipartSession, {
+        file: new Uint8Array(partSize + 1),
+        contentType: 'image/png',
+        state: {
+          uploadId: 'upload-1',
+          parts: [
+            { partNumber: 1, etag: 'first' },
+            { partNumber: 1, etag: 'duplicate' },
+          ],
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_argument' });
+    expect(requests).toHaveLength(0);
   });
 
   it('when visibility is omitted, then the server applies its default', async () => {
@@ -273,7 +391,7 @@ describe('upload', () => {
 
     await expect(
       client(fetchImpl).files.upload({
-        file: new Uint8Array([1]),
+        file: new Uint8Array([1, 2, 3]),
         name: 'logo.png',
         contentType: 'image/png',
       }),
